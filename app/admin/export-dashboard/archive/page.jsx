@@ -1,0 +1,188 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft, Search, Archive, Download, Package, ReceiptText, Globe, Paperclip } from 'lucide-react';
+import Loader from '@/components/ui/Loader';
+import Pagination from '@/components/ui/Pagination';
+import { format } from 'date-fns';
+import { generateShipmentDocPDF, docTypeLabel } from '@/lib/exportDocuments';
+import toast from 'react-hot-toast';
+
+// Issue 38: "only files ... in pdf format" — an uploaded Additional Document only belongs in the
+// archive if it actually is a PDF (jpg/png attachments are excluded), checked by extension since
+// that's what both the filename and the stored URL reliably carry.
+function isPdf(doc) {
+  const s = `${doc?.url || ''} ${doc?.name || ''}`.toLowerCase();
+  return s.endsWith('.pdf') || s.includes('.pdf?') || s.includes('.pdf#');
+}
+
+// One completed shipment's file list: the 3 generatable documents (as real PDFs, on demand, via the
+// same generator used for the shipment page's Download button) plus any uploaded attachment that is
+// itself already a PDF.
+function ShipmentFileGroup({ shipment, letterheadUrl, docStyle }) {
+  const [downloadingKey, setDownloadingKey] = useState(null);
+
+  const generatedDocs = [
+    { key: 'packing', label: 'Packing List', Icon: Package, has: (shipment.items || []).some(i => i.productName) },
+    { key: 'buyer-invoice', label: "Buyer's Invoice", Icon: ReceiptText, has: (shipment.buyerItems || []).some(i => i.productName) },
+    { key: 'bd-invoice', label: 'BD Invoice', Icon: Globe, has: (shipment.bdItems || []).some(i => i.productName) },
+  ].filter(d => d.has);
+
+  const uploadedPdfs = (shipment.additionalDocs || []).filter(isPdf);
+
+  const handleDownloadGenerated = async (baseDocType) => {
+    setDownloadingKey(baseDocType);
+    try {
+      const docType = `${baseDocType}-${docStyle}`;
+      const pdf = await generateShipmentDocPDF({ docType, shipment, buyer: shipment.buyer, letterheadUrl });
+      pdf.save(`${docTypeLabel(baseDocType).replace(/\s+/g, '-')}-${shipment.shipmentNo || shipment._id}.pdf`);
+    } catch {
+      toast.error('Could not generate this PDF');
+    } finally {
+      setDownloadingKey(null);
+    }
+  };
+
+  if (generatedDocs.length === 0 && uploadedPdfs.length === 0) {
+    return <div className="px-4 py-3 text-xs text-gray-400 italic">No PDF documents for this shipment yet</div>;
+  }
+
+  return (
+    <div className="divide-y divide-gray-50 dark:divide-gray-800">
+      {generatedDocs.map(d => (
+        <div key={d.key} className="flex items-center justify-between px-4 py-2.5 gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <d.Icon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{d.label}.pdf</span>
+          </div>
+          <button onClick={() => handleDownloadGenerated(d.key)} disabled={downloadingKey === d.key}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-brand hover:bg-green-50 dark:hover:bg-green-900/20 transition-all disabled:opacity-60 flex-shrink-0">
+            <Download className="w-3.5 h-3.5" /> {downloadingKey === d.key ? 'Preparing…' : 'Download'}
+          </button>
+        </div>
+      ))}
+      {uploadedPdfs.map((doc, i) => (
+        <div key={i} className="flex items-center justify-between px-4 py-2.5 gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Paperclip className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{doc.name || 'Document.pdf'}</span>
+          </div>
+          <a href={doc.url} target="_blank" rel="noopener noreferrer" download
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-brand hover:bg-green-50 dark:hover:bg-green-900/20 transition-all flex-shrink-0">
+            <Download className="w-3.5 h-3.5" /> Download
+          </a>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function ExportArchivePage() {
+  const router = useRouter();
+  const [shipments, setShipments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [country, setCountry] = useState('');
+  const [countries, setCountries] = useState([]);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [letterheadUrl, setLetterheadUrl] = useState('');
+  const [docStyle, setDocStyle] = useState('letterhead');
+
+  useEffect(() => {
+    fetch('/api/export/countries').then(r => r.json()).then(d => setCountries(d.countries || []));
+    // Same global company letterhead used everywhere else (issue 39) — so a PDF generated from the
+    // archive looks identical to one generated from the shipment page itself.
+    fetch('/api/settings').then(r => r.json()).then(d => setLetterheadUrl(d?.settings?.exportLetterheadUrl || '')).catch(() => {});
+  }, []);
+
+  const fetchShipments = async () => {
+    setLoading(true);
+    const q = new URLSearchParams({ page, limit: 20, status: 'completed' }); // archive = completed shipments only, always (issue 38)
+    if (search) q.set('search', search);
+    if (country) q.set('country', country);
+    const r = await fetch(`/api/export/shipments?${q}`);
+    const d = await r.json();
+    setShipments(d.shipments || []);
+    setPages(d.pages || 1);
+    setTotal(d.total || 0);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchShipments(); }, [page, search, country]);
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <button onClick={() => router.push('/admin/export-dashboard')} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+          <ArrowLeft className="w-5 h-5 text-gray-500" />
+        </button>
+        <div className="flex-1 min-w-[220px]">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <Archive className="w-6 h-6 text-brand" /> Export Archives
+          </h1>
+          <p className="text-sm text-gray-500">{total} completed shipment{total === 1 ? '' : 's'} · PDF documents only, all in one place for review</p>
+        </div>
+        <div className="flex rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden text-xs font-medium flex-shrink-0" title="Style used when generating a document from this page">
+          <button type="button" onClick={() => setDocStyle('letterhead')}
+            className={`px-2.5 py-1.5 transition-colors ${docStyle === 'letterhead' ? 'text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+            style={docStyle === 'letterhead' ? { backgroundColor: 'var(--color-primary)' } : {}}>
+            Letterhead
+          </button>
+          <button type="button" onClick={() => setDocStyle('plain')}
+            className={`px-2.5 py-1.5 border-l border-gray-200 dark:border-gray-700 transition-colors ${docStyle === 'plain' ? 'text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+            style={docStyle === 'plain' ? { backgroundColor: 'var(--color-primary)' } : {}}>
+            Plain A4
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 mb-5 flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input type="text" placeholder="Search shipment no, invoice no..." value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            className="input-field pl-9 py-2 text-sm" />
+        </div>
+        <select value={country} onChange={e => { setCountry(e.target.value); setPage(1); }} className="input-field py-2 text-sm w-auto">
+          <option value="">All Countries</option>
+          {countries.map(c => <option key={c._id} value={c._id}>{c.flag || '🌍'} {c.name}</option>)}
+        </select>
+        <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 text-xs font-medium text-green-700">
+          ✅ Completed shipments only
+        </div>
+      </div>
+
+      {loading ? <Loader /> : (
+        <>
+          <div className="space-y-4">
+            {shipments.length === 0 ? (
+              <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 py-16 text-center text-gray-400">
+                <Archive className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p>No completed shipments found</p>
+              </div>
+            ) : shipments.map(s => (
+              <div key={s._id} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800 flex-wrap gap-2">
+                  <div>
+                    <p className="font-bold text-gray-900 dark:text-white text-sm">{s.shipmentNo}</p>
+                    <p className="text-xs text-gray-500">{s.buyer?.name || '—'} · {s.country?.flag || '🌍'} {s.country?.name || '—'} · {s.date ? format(new Date(s.date), 'dd MMM yyyy') : '—'}</p>
+                  </div>
+                  <Link href={`/admin/export-dashboard/countries/${s.country?._id}/buyers/${s.buyer?._id}/shipments/${s._id}`}
+                    className="text-xs font-semibold text-brand hover:underline flex-shrink-0">
+                    Open shipment →
+                  </Link>
+                </div>
+                <ShipmentFileGroup shipment={s} letterheadUrl={letterheadUrl} docStyle={docStyle} />
+              </div>
+            ))}
+          </div>
+          <Pagination page={page} pages={pages} onChange={setPage} />
+        </>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.github
+*.log
+.env
+.env.local
+.env*.local
+npm-debug.log*
+README.md
+PROJECT_STATUS.md
+DEPLOYMENT.md
+.DS_Store
+coverage
+tests

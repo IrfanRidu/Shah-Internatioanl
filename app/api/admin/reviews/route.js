@@ -1,0 +1,34 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import connectDB from '@/lib/mongodb';
+import Review from '@/models/Review';
+import { hasPermission } from '@/lib/permissions';
+
+export async function GET(request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!hasPermission(session, 'reviews', 'view')) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
+    }
+    await connectDB();
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '20');
+    const approved = searchParams.get('approved');
+    const query = {};
+    if (approved === 'true') query.isApproved = true;
+    else if (approved === 'false') query.isApproved = false;
+    const total = await Review.countDocuments(query);
+    const reviews = await Review.find(query)
+      .populate('user', 'name email avatar buyerType')
+      .populate('product', 'name slug')
+      .sort('-createdAt')
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+    return NextResponse.json({ success: true, reviews, total, page, pages: Math.ceil(total / limit) });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}

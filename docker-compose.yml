@@ -1,0 +1,69 @@
+# Self-host stack: the Next.js app + a local MongoDB replica set (a single-node
+# replica set, not a true standalone instance, specifically so the Phase 5
+# live-order feature — MongoDB Change Streams via SSE — works out of the box).
+#
+# Usage:
+#   cp .env.example .env.local        # fill in Cloudinary/Stripe/SMTP/etc.
+#   docker compose up --build
+#   docker compose run --rm seed      # first run only, seeds demo data
+#
+# The app will be available at http://localhost:3000
+#
+# Note: `seed` runs against the `builder` stage, not the slim `runner` stage —
+# the production image (output: 'standalone') intentionally doesn't include
+# scripts/ or the full node_modules, so seeding needs the fuller build stage.
+
+version: '3.9'
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: >
+        mongosh --quiet --eval
+        "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      # Overrides .env.local's MONGODB_URI to point at the compose service
+      # name (with replicaSet, so change streams work) rather than localhost.
+      MONGODB_URI: mongodb://mongo:27017/shah-international?replicaSet=rs0
+      NEXTAUTH_URL: http://localhost:3000
+
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env.local
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/shah-international?replicaSet=rs0
+    entrypoint: ["node", "scripts/seed.js"]
+    profiles: ["tools"] # only runs via `docker compose run --rm seed`, not on `up`
+
+volumes:
+  mongo_data:

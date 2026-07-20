@@ -1,0 +1,37 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import connectDB from '@/lib/mongodb';
+import Page from '@/models/Page';
+import { hasPermission, isAdminRole } from '@/lib/permissions';
+
+export async function GET(request) {
+  try {
+    await connectDB();
+    const { searchParams } = new URL(request.url);
+    const adminView = searchParams.get('adminView');
+    const session = await getServerSession(authOptions);
+    const isAdmin = isAdminRole(session);
+    const query = adminView && isAdmin ? {} : { isActive: true };
+    const pages = await Page.find(query).sort({ displayOrder: 1, createdAt: -1 }).lean();
+    return NextResponse.json({ success: true, pages });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!hasPermission(session, 'pages', 'create')) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
+    }
+    await connectDB();
+    const body = await request.json();
+    body.createdBy = session.user.id;
+    const page = await Page.create(body);
+    return NextResponse.json({ success: true, page }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}

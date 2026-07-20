@@ -1,0 +1,35 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import connectDB from '@/lib/mongodb';
+import SpecialSection from '@/models/SpecialSection';
+import { hasPermission, isAdminRole } from '@/lib/permissions';
+
+export async function PUT(request, { params }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!hasPermission(session, 'sections', 'edit')) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
+    }
+    await connectDB();
+    const body = await request.json();
+    const section = await SpecialSection.findByIdAndUpdate(params.id, body, { new: true });
+    return NextResponse.json({ success: true, section });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request, { params }) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!hasPermission(session, 'sections', 'delete')) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
+    }
+    await connectDB();
+    await SpecialSection.findByIdAndDelete(params.id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
