@@ -6,10 +6,11 @@ import Modal from '@/components/ui/Modal';
 import Badge from '@/components/ui/Badge';
 import Loader from '@/components/ui/Loader';
 import { Plus, Edit2, Trash2, Copy } from 'lucide-react';
+import ProductMultiSelect from '@/components/admin/ProductMultiSelect';
 import toast from 'react-hot-toast';
 import { format, isAfter, isBefore } from 'date-fns';
 
-const EMPTY = { code: '', description: '', type: 'percentage', value: '', minimumOrderAmount: '0', maximumDiscount: '', usageLimit: '', validFrom: '', validUntil: '', isActive: true, applicableFor: 'all' };
+const EMPTY = { code: '', description: '', type: 'percentage', value: '', minimumOrderAmount: '0', maximumDiscount: '', usageLimit: '', usagePerUser: '1', validFrom: '', validUntil: '', isActive: true, applicableFor: 'all', applicableProducts: [] };
 
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState([]);
@@ -31,7 +32,17 @@ export default function AdminCouponsPage() {
     setSaving(true);
     const url = edit ? `/api/coupons/${edit._id}` : '/api/coupons';
     const method = edit ? 'PUT' : 'POST';
-    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, value: Number(form.value), minimumOrderAmount: Number(form.minimumOrderAmount) || 0, maximumDiscount: form.maximumDiscount ? Number(form.maximumDiscount) : undefined, usageLimit: form.usageLimit ? Number(form.usageLimit) : undefined }) });
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      ...form,
+      value: Number(form.value),
+      minimumOrderAmount: Number(form.minimumOrderAmount) || 0,
+      maximumDiscount: form.maximumDiscount ? Number(form.maximumDiscount) : undefined,
+      usageLimit: form.usageLimit ? Number(form.usageLimit) : undefined,
+      usagePerUser: form.usagePerUser ? Number(form.usagePerUser) : 1,
+      // applicableProducts is kept in form state as [{_id, name}] pairs for the picker's chip
+      // display — the model just wants plain ObjectIds.
+      applicableProducts: (form.applicableProducts || []).map(p => p._id),
+    }) });
     const d = await r.json();
     setSaving(false);
     if (d.success) { toast.success('Saved!'); setModal(false); fetch_(); } else toast.error(d.message);
@@ -98,11 +109,17 @@ export default function AdminCouponsPage() {
           <Input label="Max Discount (৳)" type="number" value={form.maximumDiscount} onChange={e => set('maximumDiscount', e.target.value)} placeholder="Optional cap" />
           <Input label="Min Order (৳)" type="number" value={form.minimumOrderAmount} onChange={e => set('minimumOrderAmount', e.target.value)} placeholder="0" />
           <Input label="Usage Limit" type="number" value={form.usageLimit} onChange={e => set('usageLimit', e.target.value)} placeholder="Unlimited" />
+          <Input label="Usage Limit Per User" type="number" min="1" value={form.usagePerUser} onChange={e => set('usagePerUser', e.target.value)} placeholder="1" />
           <Input label="Valid From" type="date" required value={form.validFrom} onChange={e => set('validFrom', e.target.value)} />
           <Input label="Valid Until" type="date" required value={form.validUntil} onChange={e => set('validUntil', e.target.value)} />
           <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Applicable For</label>
             <select value={form.applicableFor} onChange={e => set('applicableFor', e.target.value)} className="input-field"><option value="all">All Buyers</option><option value="local">Local Only</option><option value="international">International Only</option></select></div>
           <Input label="Description" value={form.description} onChange={e => set('description', e.target.value)} placeholder="Internal note" />
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Applicable Products</label>
+            <ProductMultiSelect value={form.applicableProducts || []} onChange={v => set('applicableProducts', v)} />
+            <p className="text-xs text-gray-400 mt-1">Leave empty to allow this coupon on any product (storewide).</p>
+          </div>
         </div>
       </Modal>
     </div>

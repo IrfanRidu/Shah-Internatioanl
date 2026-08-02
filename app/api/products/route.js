@@ -4,12 +4,18 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Inventory from '@/models/Inventory';
-import { generateSlug, buildProductQuery, paginateQuery } from '@/lib/utils';
+import { generateSlug, buildProductQuery, paginateQuery, computeHarvestingSeason } from '@/lib/utils';
 import { hasPermission, isAdminRole } from '@/lib/permissions';
+import { syncHarvestingSeasonStatus } from '@/lib/harvestSeason';
 
 export async function GET(request) {
   try {
     await connectDB();
+    // Issue 4: keep isHarvestingSeason accurate for "today" before this request's own sort/filter
+    // runs — cheap (two no-op updateMany calls once already in sync) and this is the site's
+    // highest-traffic product-list endpoint, so calling it here is enough to keep the whole
+    // collection self-correcting without any external scheduler.
+    await syncHarvestingSeasonStatus();
     const { searchParams } = new URL(request.url);
     const page = searchParams.get('page') || 1;
     const limit = searchParams.get('limit') || 20;
@@ -19,13 +25,14 @@ export async function GET(request) {
     const search = searchParams.get('search');
     const isFeatured = searchParams.get('featured');
     const isHarvesting = searchParams.get('harvesting');
+    const allowPreOrder = searchParams.get('preOrder');
     const sort = searchParams.get('sort') || '-createdAt';
     const adminView = searchParams.get('adminView');
 
     const session = await getServerSession(authOptions);
     const isAdmin = isAdminRole(session);
 
-    const query = adminView && isAdmin ? {} : buildProductQuery({ category, subcategory, buyerType, search, isFeatured, isHarvesting });
+    const query = adminView && isAdmin ? {} : buildProductQuery({ category, subcategory, buyerType, search, isFeatured, isHarvesting, allowPreOrder });
     const { skip, limit: lim } = paginateQuery(page, limit);
 
     // Seasonal products first, then by requested sort
@@ -62,6 +69,10 @@ export async function POST(request) {
     await connectDB();
     const body = await request.json();
     body.slug = generateSlug(body.name);
+    // Issue 4: never trust a client-sent isHarvestingSeason — derive it from harvestingMonths here,
+    // server-side, so it's correct even if the admin form's own live-preview logic ever drifts.
+    const computedSeason = computeHarvestingSeason(body.harvestingMonths);
+    if (computedSeason !== null) body.isHarvestingSeason = computedSeason;
 
     // Check slug uniqueness
     const existing = await Product.findOne({ slug: body.slug });

@@ -23,7 +23,6 @@ export async function PATCH(request) {
       case 'feature':    updateObj = { isFeatured: true }; break;
       case 'unfeature':  updateObj = { isFeatured: false }; break;
       case 'organic':    updateObj = { isOrganic: true }; break;
-      case 'season':     updateObj = { isHarvestingSeason: value }; break;
       case 'category':   updateObj = { category: value }; break;
       default: return NextResponse.json({ success: false, message: 'Unknown action' }, { status: 400 });
     }

@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import toast from 'react-hot-toast';
 import { Upload, X, Save, ArrowLeft, RefreshCw } from 'lucide-react';
+import { computeHarvestingSeason } from '@/lib/utils';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -51,7 +52,7 @@ export function ProductForm({ initialData = {}, productId = null }) {
   const [uploading, setUploading] = useState(false);
   const [syncingFx, setSyncingFx] = useState(false);
   const [form, setForm] = useState({
-    name: '', scientificName: '', description: '', shortDescription: '',
+    name: '', scientificName: '', hsCode: '', description: '', shortDescription: '',
     category: '', subcategorySlug: '',
     price: '', discountPrice: '', priceRangeMin: '', priceRangeMax: '', productCost: '',
     quantity: '', unit: 'kg', minimumOrderQuantity: '1',
@@ -134,6 +135,9 @@ export function ProductForm({ initialData = {}, productId = null }) {
   };
 
   const selectedCat = categories.find(c => c._id === form.category);
+  // Issue 4: no more manual toggle — this is the single source of truth for both the status badge
+  // below and what actually gets submitted. null means no months picked yet (nothing to derive from).
+  const computedSeason = computeHarvestingSeason(form.harvestingMonths);
 
   const handleSubmit = async () => {
     if (!form.name || !form.category || !form.description) {
@@ -149,6 +153,10 @@ export function ProductForm({ initialData = {}, productId = null }) {
       productCost: Number(form.productCost) || null,
       quantity: Number(form.quantity) || 0,
       minimumOrderQuantity: Number(form.minimumOrderQuantity) || 1,
+      shelfLife: form.shelfLife === '' || form.shelfLife === null || form.shelfLife === undefined ? null : Number(form.shelfLife),
+      // Issue 4: derived from harvestingMonths, never from a hand-set toggle. Falls back to
+      // whatever was already on the product when no months are picked at all (legacy data).
+      isHarvestingSeason: computedSeason !== null ? computedSeason : form.isHarvestingSeason,
       tags: (() => {
         const t = form.tags;
         if (!t) return [];
@@ -203,7 +211,8 @@ export function ProductForm({ initialData = {}, productId = null }) {
       <Section title="📝 Basic Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input label="Product Name" required placeholder="e.g. Bitter Gourd" value={form.name} onChange={e => set('name', e.target.value)} />
-          <Input label="Scientific Name" placeholder="e.g. Momordica charantia" value={form.scientificName} onChange={e => set('scientificName', e.target.value)} />
+          <Input label="Botanical Name" placeholder="e.g. Momordica charantia" value={form.scientificName} onChange={e => set('scientificName', e.target.value)} />
+          <Input label="HS Code" placeholder="e.g. 07099090" hint="Optional — customs code, auto-fills onto Export Dashboard shipments when this product is picked" value={form.hsCode} onChange={e => set('hsCode', e.target.value)} />
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Description <span className="text-red-500">*</span></label>
             <textarea rows={4} placeholder="Detailed product description..." value={form.description} onChange={e => set('description', e.target.value)} className="input-field resize-none" />
@@ -266,7 +275,7 @@ export function ProductForm({ initialData = {}, productId = null }) {
             </select>
           </div>
           <Input label="Min. Order Qty" type="number" value={form.minimumOrderQuantity} onChange={e => set('minimumOrderQuantity', e.target.value)} />
-          <Input label="Shelf Life" placeholder="e.g. 7 days" value={form.shelfLife} onChange={e => set('shelfLife', e.target.value)} />
+          <Input label="Shelf Life (Days)" type="number" min="0" placeholder="e.g. 7" value={form.shelfLife} onChange={e => set('shelfLife', e.target.value)} />
         </div>
         <div className="mt-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Storage Instructions</label>
@@ -297,7 +306,22 @@ export function ProductForm({ initialData = {}, productId = null }) {
           </div>
         </div>
         <div className="space-y-3">
-          <Toggle label="Currently In Harvesting Season" checked={form.isHarvestingSeason} onChange={v => set('isHarvestingSeason', v)} />
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-700 dark:text-gray-300">Current Harvesting Status</span>
+            {computedSeason === null && (
+              <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">Pick months above ↑</span>
+            )}
+            {computedSeason === true && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">🟢 Currently Harvesting</span>
+            )}
+            {computedSeason === false && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">⏰ Off Season</span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400">
+            Automatically determined from the harvesting months selected above and today's date — it
+            switches on and off by itself as the calendar turns, so there's nothing to set by hand.
+          </p>
           <Toggle label="Allow Pre-Order (Off Season)" checked={form.allowPreOrder} onChange={v => set('allowPreOrder', v)} />
         </div>
       </Section>

@@ -49,6 +49,7 @@ export default function AdminDashboard() {
       fetch('/api/orders?limit=8&sort=-createdAt'),
     ]);
     const [md, od] = await Promise.all([metricsRes.json(), ordersRes.json()]);
+    if (md.success === false) toast.error(md.message || 'Failed to load dashboard metrics');
     setMetrics(md.metrics);
     setOrders(od.orders || []);
     setLastRefresh(new Date());

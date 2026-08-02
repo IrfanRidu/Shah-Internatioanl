@@ -12,7 +12,7 @@ export async function GET(request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
     }
     await connectDB();
-    const coupons = await Coupon.find().sort('-createdAt').lean();
+    const coupons = await Coupon.find().populate('applicableProducts', 'name slug').sort('-createdAt').lean();
     return NextResponse.json({ success: true, coupons });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

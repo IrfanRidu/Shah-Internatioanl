@@ -6,7 +6,7 @@ import { ArrowLeft, Search, Archive, Download, Package, ReceiptText, Globe, Pape
 import Loader from '@/components/ui/Loader';
 import Pagination from '@/components/ui/Pagination';
 import { format } from 'date-fns';
-import { generateShipmentDocPDF, docTypeLabel } from '@/lib/exportDocuments';
+import { generateShipmentDocPDF, generateAllDocumentsPDF, docTypeLabel, isMergeableAttachment } from '@/lib/exportDocuments';
 import toast from 'react-hot-toast';
 
 // Issue 38: "only files ... in pdf format" — an uploaded Additional Document only belongs in the
@@ -20,22 +20,35 @@ function isPdf(doc) {
 // One completed shipment's file list: the 3 generatable documents (as real PDFs, on demand, via the
 // same generator used for the shipment page's Download button) plus any uploaded attachment that is
 // itself already a PDF.
-function ShipmentFileGroup({ shipment, letterheadUrl, docStyle }) {
+function ShipmentFileGroup({ shipment, letterheadUrl, exporterInfo, docStyle }) {
   const [downloadingKey, setDownloadingKey] = useState(null);
+  const [mergingAll, setMergingAll] = useState(false);
+
+  // Requirement 7: this shipment's own selected Export License's letterhead takes priority over
+  // the global company one passed down from the page — different shipments on this same archive
+  // page can have different licenses selected, so this has to be computed per-shipment rather than
+  // once for the whole page.
+  const effectiveLetterheadUrl = shipment.exportLicense?.letterheadUrl || letterheadUrl;
 
   const generatedDocs = [
     { key: 'packing', label: 'Packing List', Icon: Package, has: (shipment.items || []).some(i => i.productName) },
-    { key: 'buyer-invoice', label: "Buyer's Invoice", Icon: ReceiptText, has: (shipment.buyerItems || []).some(i => i.productName) },
+    // Batch 7: Buyer's Invoice is now a read-only mirror of the master `items` table (no longer its
+    // own independently-filled `buyerItems`) — this availability check follows that.
+    { key: 'buyer-invoice', label: "Buyer's Invoice", Icon: ReceiptText, has: (shipment.items || []).some(i => i.productName) },
     { key: 'bd-invoice', label: 'BD Invoice', Icon: Globe, has: (shipment.bdItems || []).some(i => i.productName) },
   ].filter(d => d.has);
 
   const uploadedPdfs = (shipment.additionalDocs || []).filter(isPdf);
+  // Issue 3: the merge (handleDownloadAll below) now also embeds JPG/PNG attachments, not just
+  // PDFs — this broader count is only for the "N merged" badge and empty-state check just below;
+  // the individual per-file list further down intentionally stays PDF-only (issue 38).
+  const mergeableAttachments = (shipment.additionalDocs || []).filter(isMergeableAttachment);
 
   const handleDownloadGenerated = async (baseDocType) => {
     setDownloadingKey(baseDocType);
     try {
       const docType = `${baseDocType}-${docStyle}`;
-      const pdf = await generateShipmentDocPDF({ docType, shipment, buyer: shipment.buyer, letterheadUrl });
+      const pdf = await generateShipmentDocPDF({ docType, shipment, buyer: shipment.buyer, letterheadUrl: effectiveLetterheadUrl, exporterInfo });
       pdf.save(`${docTypeLabel(baseDocType).replace(/\s+/g, '-')}-${shipment.shipmentNo || shipment._id}.pdf`);
     } catch {
       toast.error('Could not generate this PDF');
@@ -44,12 +57,48 @@ function ShipmentFileGroup({ shipment, letterheadUrl, docStyle }) {
     }
   };
 
-  if (generatedDocs.length === 0 && uploadedPdfs.length === 0) {
-    return <div className="px-4 py-3 text-xs text-gray-400 italic">No PDF documents for this shipment yet</div>;
+  // Issue 11: one merged PDF combining every generated document + uploaded PDF attachment for this
+  // shipment, named "All Documents for (Shipment Name)".
+  const handleDownloadAll = async () => {
+    setMergingAll(true);
+    try {
+      const { blob, skipped } = await generateAllDocumentsPDF({ shipment, buyer: shipment.buyer, letterheadUrl: effectiveLetterheadUrl, docStyle, exporterInfo });
+      if (!blob) { toast.error('No documents available to merge for this shipment'); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `All-Documents-for-${shipment.shipmentNo || shipment._id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      if (skipped?.length) {
+        toast.error(`Merged, but ${skipped.length} attachment(s) couldn't be included: ${skipped.join(', ')}. Try re-uploading them in the shipment's Other Details tab.`, { duration: 8000 });
+      }
+    } catch (e) {
+      toast.error('Could not merge documents for this shipment');
+    } finally {
+      setMergingAll(false);
+    }
+  };
+
+  if (generatedDocs.length === 0 && mergeableAttachments.length === 0) {
+    return <div className="px-4 py-3 text-xs text-gray-400 italic">No documents for this shipment yet</div>;
   }
 
   return (
     <div className="divide-y divide-gray-50 dark:divide-gray-800">
+      <div className="flex items-center justify-between px-4 py-2.5 gap-3 bg-brand/5">
+        <div className="flex items-center gap-2 min-w-0">
+          <Archive className="w-4 h-4 text-brand flex-shrink-0" />
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">All Documents for {shipment.shipmentNo || 'this shipment'}.pdf</span>
+          <span className="text-xs text-gray-400 flex-shrink-0">({generatedDocs.length + mergeableAttachments.length} merged)</span>
+        </div>
+        <button onClick={handleDownloadAll} disabled={mergingAll}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60 flex-shrink-0" style={{ backgroundColor: 'var(--color-primary)' }}>
+          <Download className="w-3.5 h-3.5" /> {mergingAll ? 'Merging…' : 'Download All'}
+        </button>
+      </div>
       {generatedDocs.map(d => (
         <div key={d.key} className="flex items-center justify-between px-4 py-2.5 gap-3">
           <div className="flex items-center gap-2 min-w-0">
@@ -89,13 +138,17 @@ export default function ExportArchivePage() {
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [letterheadUrl, setLetterheadUrl] = useState('');
+  const [exporterInfo, setExporterInfo] = useState({ exporterName: 'Shah International', exporterAddress: '' });
   const [docStyle, setDocStyle] = useState('letterhead');
 
   useEffect(() => {
     fetch('/api/export/countries').then(r => r.json()).then(d => setCountries(d.countries || []));
-    // Same global company letterhead used everywhere else (issue 39) — so a PDF generated from the
-    // archive looks identical to one generated from the shipment page itself.
-    fetch('/api/settings').then(r => r.json()).then(d => setLetterheadUrl(d?.settings?.exportLetterheadUrl || '')).catch(() => {});
+    // Same global company letterhead/exporter identity used everywhere else (issue 39, R1) — so a
+    // PDF generated from the archive looks identical to one generated from the shipment page itself.
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      setLetterheadUrl(d?.settings?.exportLetterheadUrl || '');
+      setExporterInfo({ exporterName: d?.settings?.exporterName || 'Shah International', exporterAddress: d?.settings?.exporterAddress || '' });
+    }).catch(() => {});
   }, []);
 
   const fetchShipments = async () => {
@@ -176,7 +229,7 @@ export default function ExportArchivePage() {
                     Open shipment →
                   </Link>
                 </div>
-                <ShipmentFileGroup shipment={s} letterheadUrl={letterheadUrl} docStyle={docStyle} />
+                <ShipmentFileGroup shipment={s} letterheadUrl={letterheadUrl} exporterInfo={exporterInfo} docStyle={docStyle} />
               </div>
             ))}
           </div>

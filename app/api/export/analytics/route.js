@@ -60,6 +60,10 @@ export async function GET(request) {
     // Financials are recomputed here (not just read from the stored fields) so a shipment saved
     // before the Initial Balance was last changed still reflects the CURRENT principal, matching
     // "used as the default principal for future calculations until updated by the user".
+    // Issue 14: freightCost is stored in the shipment's own base currency (like orderValueForeign),
+    // NOT BDT — calculateShipmentFinancials converts it via that shipment's own exchangeRateBDT
+    // (returned as computed.freightCostBDT) before it's converted again into the analytics display
+    // currency below, same two-step treatment as every other cost figure here.
     const analytics = rows.map(s => {
       const computed = calculateShipmentFinancials({
         initialBalance,
@@ -78,7 +82,7 @@ export async function GET(request) {
         date: s.date,
         totalNetWeightKg: s.totalNetWeightKg || 0,
         totalGrossWeightKg: s.totalGrossWeightKg || 0,
-        freightCost: conv(s.freightCost),
+        freightCost: conv(computed.freightCostBDT),
         goodsCost: conv(s.goodsCost),
         exportProcessingCost: conv(s.exportProcessingCost),
         othersCost: conv(s.othersCost),

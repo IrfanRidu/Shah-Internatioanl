@@ -32,7 +32,7 @@ export default function ComparePage() {
     { label: 'Season', key: p => p.harvestingSeason || '—' },
     { label: 'Origin', key: p => p.countryOfOrigin || '—' },
     { label: 'Harvesting Location', key: p => p.harvestingLocation || '—' },
-    { label: 'Shelf Life', key: p => p.shelfLife || '—' },
+    { label: 'Shelf Life', key: p => p.shelfLife ? `${p.shelfLife} day${p.shelfLife === 1 ? '' : 's'}` : '—' },
     { label: 'Rating', key: p => p.reviewCount > 0 ? `${p.averageRating?.toFixed(1)} ★ (${p.reviewCount})` : 'No reviews' },
     { label: 'Certifications', key: p => p.certifications?.map(c => c.name).join(', ') || 'None' },
     { label: 'Organic', key: p => p.isOrganic, type: 'bool' },

@@ -5,6 +5,8 @@ import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Inventory from '@/models/Inventory';
 import { hasPermission, isAdminRole } from '@/lib/permissions';
+import { computeHarvestingSeason } from '@/lib/utils';
+import { applyComputedHarvestSeason } from '@/lib/harvestSeason';
 
 export async function GET(request, { params }) {
   try {
@@ -21,6 +23,7 @@ export async function GET(request, { params }) {
 
     if (!product) return NextResponse.json({ success: false, message: 'Product not found' }, { status: 404 });
     if (!product.isActive && !isAdmin) return NextResponse.json({ success: false, message: 'Product not found' }, { status: 404 });
+    applyComputedHarvestSeason(product);
 
     if (!isAdmin) { const { productCost, ...rest } = product; return NextResponse.json({ success: true, product: rest }); }
 
@@ -39,6 +42,13 @@ export async function PUT(request, { params }) {
     }
     await connectDB();
     const body = await request.json();
+    // Issue 4: same server-side authority as POST — but only recompute when this update actually
+    // includes harvestingMonths, so a partial update that doesn't touch it at all (e.g. a quick
+    // stock-quantity edit) can't accidentally stomp isHarvestingSeason using an absent/undefined array.
+    if (body.harvestingMonths !== undefined) {
+      const computedSeason = computeHarvestingSeason(body.harvestingMonths);
+      if (computedSeason !== null) body.isHarvestingSeason = computedSeason;
+    }
     const product = await Product.findByIdAndUpdate(params.id, body, { new: true, runValidators: true });
     if (!product) return NextResponse.json({ success: false, message: 'Product not found' }, { status: 404 });
 

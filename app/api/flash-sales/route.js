@@ -13,7 +13,7 @@ export async function GET(request) {
     const session = await getServerSession(authOptions);
     const isAdmin = isAdminRole(session);
     const query = !isAdmin || activeOnly ? { isActive: true, startTime: { $lte: new Date() }, endTime: { $gte: new Date() } } : {};
-    const sales = await FlashSale.find(query).populate('items.product', 'name images slug').sort('-createdAt').lean();
+    const sales = await FlashSale.find(query).populate('items.product', 'name images slug availableForLocal availableForInternational').sort('-createdAt').lean();
     return NextResponse.json({ success: true, sales });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

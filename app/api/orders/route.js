@@ -147,14 +147,36 @@ export async function POST(request) {
     if (couponCode) {
       const coupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
       if (coupon && new Date() >= coupon.validFrom && new Date() <= coupon.validUntil) {
-        if (subtotal >= coupon.minimumOrderAmount) {
+        // Issue 8: this is the AUTHORITATIVE enforcement point (the /api/coupons/validate
+        // pre-check while shopping is only ever advisory — nothing stopped a client from placing
+        // the order directly, or two requests racing past validate before either had incremented
+        // anything). Re-check everything here, right before actually consuming a use.
+        const overallOk = !coupon.usageLimit || coupon.usedCount < coupon.usageLimit;
+        const priorUse = (coupon.usedBy || []).find(u => String(u.user) === String(session.user.id));
+        const perUserOk = !coupon.usagePerUser || !priorUse || priorUse.count < coupon.usagePerUser;
+        // Issue 7: a product-restricted coupon only applies when this order actually contains at
+        // least one of the products the admin picked for it.
+        const eligibleProduct = !coupon.applicableProducts?.length
+          || enrichedItems.some(i => coupon.applicableProducts.some(id => String(id) === String(i.product)));
+        if (subtotal >= coupon.minimumOrderAmount && overallOk && perUserOk && eligibleProduct) {
           appliedCoupon = coupon.code;
           if (coupon.type === 'percentage') {
             couponDiscount = Math.min(subtotal * coupon.value / 100, coupon.maximumDiscount || Infinity);
           } else {
             couponDiscount = Math.min(coupon.value, subtotal);
           }
-          await Coupon.findByIdAndUpdate(coupon._id, { $inc: { usedCount: 1 } });
+          // Track both the overall count and this specific user's own count.
+          if (priorUse) {
+            await Coupon.findOneAndUpdate(
+              { _id: coupon._id, 'usedBy.user': session.user.id },
+              { $inc: { usedCount: 1, 'usedBy.$.count': 1 } }
+            );
+          } else {
+            await Coupon.findByIdAndUpdate(coupon._id, {
+              $inc: { usedCount: 1 },
+              $push: { usedBy: { user: session.user.id, count: 1 } },
+            });
+          }
         }
       }
     }

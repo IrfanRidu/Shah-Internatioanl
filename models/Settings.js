@@ -111,6 +111,14 @@ const SettingsSchema = new mongoose.Schema({
   exportLetterheadUrl: String,
   exportLetterheadUpdatedAt: Date,
 
+  // Batch 7 (R1) — the exporter's own name/address, shown on every Shipment Details tab and every
+  // printed/downloaded document. Previously hardcoded as literal text in 4+ places across the print
+  // page and lib/exportDocuments.js; now a single editable source of truth (same "one global value
+  // used everywhere" pattern as the letterhead above). Defaults match that previous hardcoded text
+  // exactly, so nothing changes for existing shipments/documents until an admin edits it.
+  exporterName: { type: String, default: 'Shah International' },
+  exporterAddress: { type: String, default: '111 South Bashabo, Opposite of Sabujbagh Thana, Dhaka 1214' },
+
   // Issue 46: the Export Analytics "Initial Balance" (principal) persists here and is used as the
   // default principal for every future calculation until the admin updates it again.
   exportAnalyticsInitialBalance: { type: Number, default: 0 },
@@ -118,6 +126,20 @@ const SettingsSchema = new mongoose.Schema({
   // cost/profit/capital-gain figure there is shown in this currency, EXCEPT Order Value, which always
   // displays in each shipment's own configured currency.
   exportAnalyticsBaseCurrency: { type: String, default: 'BDT' },
+
+  // Requirement 5 (Shipment Configuration) — pre-added option lists suggested when filling in a
+  // shipment's own Mode of Carrying / Landing Port / Port of Discharge / Final Destination / Sales
+  // Terms / Country of Origin fields. Each shipment's field stays a plain String (unchanged) — these
+  // are purely suggestion sources, not references, so an admin can still type a one-off value a
+  // shipment needs without first adding it here.
+  exportShipmentOptions: {
+    modeOfCarrying: { type: [String], default: ['By Air', 'By Sea', 'By Road'] },
+    landingPort: { type: [String], default: [] },
+    portOfDischarge: { type: [String], default: [] },
+    finalDestination: { type: [String], default: [] },
+    salesTerm: { type: [String], default: ['CFR', 'FOB', 'CIF', 'EXW'] },
+    countryOfOrigin: { type: [String], default: ['Bangladesh'] },
+  },
 
 }, { timestamps: true });
 

@@ -7,6 +7,7 @@ import SpecialSection from '@/models/SpecialSection';
 import FlashSale from '@/models/FlashSale';
 import Order from '@/models/Order';
 import ProductDetailClient from './ProductDetailClient';
+import { applyComputedHarvestSeason } from '@/lib/harvestSeason';
 
 const CARD_FIELDS = 'name images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason category isOrganic isFeatured availableForLocal availableForInternational';
 
@@ -34,16 +35,36 @@ export default async function ProductPage({ params }) {
   await connectDB();
   const product = await Product.findOne({ slug: params.slug, isActive: true }).populate('category', 'name slug').lean();
   if (!product) notFound();
+  applyComputedHarvestSeason(product);
 
   const session = await getServerSession(authOptions);
   const excludeIds = new Set([String(product._id)]);
+  // Issue 9: for a signed-in buyer we KNOW their buyerType server-side (guests only have it in
+  // localStorage, which the server can't read — that case still relies on the client-side filter in
+  // ProductDetailClient.jsx). Applying it directly in the query means an invisible-to-this-buyer
+  // product never occupies a dedup slot in the first place, instead of being fetched, excluded, and
+  // silently leaving that section one item short.
+  const buyerVisibilityQuery = session?.user?.buyerType === 'local' ? { availableForLocal: { $ne: false } }
+    : session?.user?.buyerType === 'international' ? { availableForInternational: { $ne: false } }
+    : {};
+
+  // Issue 11: campaigns/sections can be restricted to one buyer type via their OWN targetAudience
+  // field (separate from per-product availability, which buyerVisibilityQuery above already
+  // scopes). Known server-side only for a signed-in buyer; guests fall back to the client-side
+  // isCampaignVisibleToBuyer filter in ProductDetailClient.jsx, same reasoning as buyerVisibilityQuery.
+  const campaignAudienceQuery = session?.user?.buyerType === 'local' ? { targetAudience: { $in: ['all', 'local'] } }
+    : session?.user?.buyerType === 'international' ? { targetAudience: { $in: ['all', 'international'] } }
+    : {};
 
   // 1. Campaigns targeting the product-detail page
-  const sectionsRaw = await SpecialSection.find({ isActive: true, position: { $in: ['productDetail', 'both'] } })
-    .populate('products', CARD_FIELDS)
+  const sectionsRaw = await SpecialSection.find({ isActive: true, position: { $in: ['productDetail', 'both'] }, ...campaignAudienceQuery })
+    .populate({ path: 'products', select: CARD_FIELDS, match: buyerVisibilityQuery })
     .sort('displayOrder')
     .limit(6)
     .lean();
+  // populate's `match` leaves a null in place of any filtered-out product rather than removing the
+  // array slot, so an explicit compact is still needed here.
+  for (const s of sectionsRaw) s.products = (s.products || []).filter(Boolean);
   const sections = sectionsRaw.filter(s => s.products?.length);
   for (const s of sections) for (const p of s.products) excludeIds.add(String(p._id));
 
@@ -51,8 +72,8 @@ export default async function ProductPage({ params }) {
   // campaigns above already used, and claim whichever product ends up displayed (the first remaining
   // item) so it can't ALSO turn up in Related/Recommended/Best-Selling further down the page.
   const now = new Date();
-  const activeSalesRaw = await FlashSale.find({ isActive: true, startTime: { $lte: now }, endTime: { $gte: now } })
-    .populate('items.product', 'name slug')
+  const activeSalesRaw = await FlashSale.find({ isActive: true, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
+    .populate({ path: 'items.product', select: 'name slug availableForLocal availableForInternational', match: buyerVisibilityQuery })
     .limit(6)
     .lean();
   const activeCampaigns = [];
@@ -67,7 +88,7 @@ export default async function ProductPage({ params }) {
   // 3. Related products (same category)
   let relatedProducts = [];
   if (product.category?._id) {
-    relatedProducts = await Product.find({ isActive: true, category: product.category._id, _id: { $nin: [...excludeIds] } })
+    relatedProducts = await Product.find({ isActive: true, category: product.category._id, _id: { $nin: [...excludeIds] }, ...buyerVisibilityQuery })
       .populate('category', 'name slug').limit(8).lean();
     for (const p of relatedProducts) excludeIds.add(String(p._id));
   }
@@ -87,12 +108,12 @@ export default async function ProductPage({ params }) {
   const personalized = recommendedCategoryIds.length > 0 && !!session?.user?.id && recommendedCategoryIds[0] !== String(product.category?._id || '');
 
   let recommendedProducts = await Product.find({
-    isActive: true, _id: { $nin: [...excludeIds] },
+    isActive: true, _id: { $nin: [...excludeIds] }, ...buyerVisibilityQuery,
     ...(recommendedCategoryIds.length ? { category: { $in: recommendedCategoryIds } } : {}),
   }).populate('category', 'name slug').sort({ isHarvestingSeason: -1, isFeatured: -1, createdAt: -1 }).limit(8).lean();
   if (recommendedProducts.length < 8) {
     const more = await Product.find({
-      isActive: true, isFeatured: true,
+      isActive: true, isFeatured: true, ...buyerVisibilityQuery,
       _id: { $nin: [...excludeIds, ...recommendedProducts.map(p => String(p._id))] },
     }).populate('category', 'name slug').limit(8 - recommendedProducts.length).lean();
     recommendedProducts = [...recommendedProducts, ...more];
@@ -111,7 +132,7 @@ export default async function ProductPage({ params }) {
     ]);
     const bestSellerIds = topSellerAgg.map(t => String(t._id)).filter(id => !excludeIds.has(id));
     if (bestSellerIds.length) {
-      const found = await Product.find({ _id: { $in: bestSellerIds }, isActive: true }).populate('category', 'name slug').lean();
+      const found = await Product.find({ _id: { $in: bestSellerIds }, isActive: true, ...buyerVisibilityQuery }).populate('category', 'name slug').lean();
       const bySold = new Map(topSellerAgg.map(t => [String(t._id), t.sold]));
       bestSellingProducts = found
         .sort((a, b) => (bySold.get(String(b._id)) || 0) - (bySold.get(String(a._id)) || 0))

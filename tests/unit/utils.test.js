@@ -173,4 +173,24 @@ describe('buildProductQuery', () => {
     expect(buildProductQuery({ isHarvesting: 'true' })).toEqual({ isActive: true, isHarvestingSeason: true });
     expect(buildProductQuery({ isHarvesting: 'false' })).toEqual({ isActive: true, isHarvestingSeason: false });
   });
+
+  it('escapes regex special characters in search text instead of passing them through raw', () => {
+    // Batch 7 round 2: botanical names throughout this catalog are written like
+    // "Mango (Mangifera indica)" — typing that unescaped mid-search (e.g. the moment the opening
+    // '(' is typed but before its closing ')') used to throw "Unterminated group" from MongoDB's
+    // $regex, which the API route's catch-all error handler turned into an empty result set —
+    // indistinguishable, from a search box, from "no matches" even though the catalog has them.
+    const query = buildProductQuery({ search: 'Mango (Mangifera indica' });
+    const namePattern = query.$or.find(c => c.name)?.name.$regex;
+    expect(() => new RegExp(namePattern, 'i')).not.toThrow();
+    expect(namePattern).toBe('Mango \\(Mangifera indica');
+  });
+
+  it('search still matches literally after escaping (no regex metacharacter side-effects)', () => {
+    const query = buildProductQuery({ search: 'C.O.D' });
+    const namePattern = query.$or.find(c => c.name)?.name.$regex;
+    const re = new RegExp(namePattern, 'i');
+    expect(re.test('C.O.D Delivery')).toBe(true);
+    expect(re.test('CXOXD Delivery')).toBe(false); // '.' must match a literal dot, not "any character"
+  });
 });

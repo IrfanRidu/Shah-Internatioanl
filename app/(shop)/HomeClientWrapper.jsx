@@ -1,9 +1,10 @@
 'use client';
 import { useBuyerType } from '@/contexts/BuyerTypeContext';
-import { isProductVisibleToBuyer } from '@/lib/utils';
+import { isProductVisibleToBuyer, isCampaignVisibleToBuyer } from '@/lib/utils';
 import HeroSection from '@/components/home/HeroSection';
 import CategorySection from '@/components/home/CategorySection';
 import FeaturedProducts from '@/components/home/FeaturedProducts';
+import ProductCarouselSection from '@/components/home/ProductCarouselSection';
 import FlashSaleSection from '@/components/home/FlashSaleSection';
 import SpecialSectionComp from '@/components/home/SpecialSection';
 import HowItWorks from '@/components/home/HowItWorks';
@@ -23,11 +24,23 @@ import FAQSection from '@/components/home/FAQSection';
  * for the homepage, since featured/campaign/section products are fetched
  * server-side (which can't know a guest's localStorage-only buyerType) and
  * were previously never filtered at all.
+ *
+ * Issue 13: the server already guarantees no product repeats anywhere on the
+ * page (a single exclude-set threaded through every query in page.jsx) — the
+ * client-side buyerType filtering below can only ever REMOVE items from a
+ * list, never add one somewhere else, so that guarantee holds no matter what
+ * a guest's buyerType turns out to be once it's known client-side.
  */
-function buildHomeSections({ categories, featuredProducts, flashSales, sections, isLocal, buyerType }) {
+function buildHomeSections({ categories, featuredProducts, flashSales, sections, harvestingProducts, preOrderProducts, categorySections, isLocal, buyerType }) {
   const visibleFeatured = featuredProducts.filter(p => isProductVisibleToBuyer(p, buyerType));
+  const visibleHarvesting = (harvestingProducts || []).filter(p => isProductVisibleToBuyer(p, buyerType));
+  const visiblePreOrder = (preOrderProducts || []).filter(p => isProductVisibleToBuyer(p, buyerType));
+  const visibleCategorySections = (categorySections || [])
+    .map(cs => ({ ...cs, products: (cs.products || []).filter(p => isProductVisibleToBuyer(p, buyerType)) }))
+    .filter(cs => cs.products.length > 0);
 
   const visibleFlashSales = flashSales
+    .filter(sale => isCampaignVisibleToBuyer(sale, buyerType))
     .map(sale => ({
       ...sale,
       items: (sale.items || []).filter(item => item.product && isProductVisibleToBuyer(item.product, buyerType)),
@@ -35,13 +48,36 @@ function buildHomeSections({ categories, featuredProducts, flashSales, sections,
     .filter(sale => sale.items.length > 0); // drop a campaign entirely if none of its products apply to this buyer
 
   const visibleSections = sections
+    .filter(s => isCampaignVisibleToBuyer(s, buyerType))
     .map(s => ({ ...s, products: (s.products || []).filter(p => isProductVisibleToBuyer(p, buyerType)) }))
     .filter(s => s.products.length > 0);
 
   const blocks = [
     { key: 'categories', node: <CategorySection categories={categories} /> },
+    // Issue 13, in the order specified: Currently Harvesting, then Available for Pre-Order, then
+    // one section per category (further down, after Featured/Special Sections).
+    ...(visibleHarvesting.length > 0 ? [{
+      key: 'harvesting',
+      node: <ProductCarouselSection eyebrow="In Season Now" title="🌾 Currently Harvesting" subtitle="Fresh off the farm and ready to ship today" products={visibleHarvesting} viewAllHref="/products?harvesting=true" />,
+    }] : []),
+    ...(visiblePreOrder.length > 0 ? [{
+      key: 'preorder',
+      node: <ProductCarouselSection eyebrow="Reserve Ahead" title="⏰ Available for Pre-Order" subtitle="Order now, harvested and shipped when ready" products={visiblePreOrder} viewAllHref="/products?preOrder=true" />,
+    }] : []),
     { key: 'featured', node: <FeaturedProducts products={visibleFeatured} /> },
     ...visibleSections.map(s => ({ key: `special-${s._id}`, node: <SpecialSectionComp section={s} /> })),
+    ...visibleCategorySections.map(cs => ({
+      key: `category-${cs.category._id}`,
+      node: (
+        <ProductCarouselSection
+          eyebrow="Shop the Category"
+          title={cs.category.name}
+          subtitle={`Explore our full ${cs.category.name.toLowerCase()} selection`}
+          products={cs.products}
+          viewAllHref={`/categories/${cs.category.slug}`}
+        />
+      ),
+    })),
     { key: 'how-it-works', node: <HowItWorks isLocal={isLocal} /> },
   ];
 
@@ -72,9 +108,13 @@ function buildHomeSections({ categories, featuredProducts, flashSales, sections,
   return result;
 }
 
-export default function HomeClientWrapper({ categories, featuredProducts, flashSales, sections, heroBanners }) {
+export default function HomeClientWrapper({ categories, featuredProducts, flashSales, sections, heroBanners, harvestingProducts, preOrderProducts, categorySections }) {
   const { isLocal, buyerType } = useBuyerType();
-  const homeSections = buildHomeSections({ categories, featuredProducts, flashSales: flashSales || [], sections, isLocal, buyerType });
+  const homeSections = buildHomeSections({
+    categories, featuredProducts, flashSales: flashSales || [], sections,
+    harvestingProducts, preOrderProducts, categorySections,
+    isLocal, buyerType,
+  });
 
   return (
     <>

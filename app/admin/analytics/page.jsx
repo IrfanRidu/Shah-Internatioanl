@@ -4,6 +4,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import Loader from '@/components/ui/Loader';
 import { format } from 'date-fns';
 import { Download, TrendingUp, DollarSign, Users, ShoppingCart, RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const COLORS = ['#2d6a4f', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
@@ -33,6 +34,7 @@ export default function AdminAnalyticsPage() {
     const p = new URLSearchParams({ from: dateRange.from, to: dateRange.to });
     const [mr, ar] = await Promise.all([fetch(`/api/admin/metrics?${p}`), fetch(`/api/admin/analytics/advanced?${p}`)]);
     const [md, ad] = await Promise.all([mr.json(), ar.json()]);
+    if (md.success === false) toast.error(md.message || 'Failed to load analytics');
     setMetrics(md.metrics);
     setAdvanced(ad);
     setLoading(false);

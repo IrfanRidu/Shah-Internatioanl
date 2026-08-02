@@ -18,12 +18,13 @@ import RecommendedForYou from '@/components/product/RecommendedForYou';
 import ActiveCampaignsStrip from '@/components/product/ActiveCampaignsStrip';
 import QuotationModal from '@/components/product/QuotationModal';
 import ImageLightbox from '@/components/ui/ImageLightbox';
+import { isProductVisibleToBuyer, isCampaignVisibleToBuyer } from '@/lib/utils';
 import SpecialSectionComp from '@/components/home/SpecialSection';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { ShoppingCart, MessageSquare, Phone, Mail, Share2, CheckCircle, Leaf, MapPin, Award, Calendar, Heart, GitCompareArrows, ZoomIn } from 'lucide-react';
+import { ShoppingCart, MessageSquare, Phone, Mail, Share2, CheckCircle, Leaf, MapPin, Award, Calendar, Heart, GitCompareArrows, ZoomIn, Sprout } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -31,7 +32,7 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function ProductDetailClient({ product, sections, activeCampaigns = [], relatedProducts = [], recommendedProducts = [], recommendedPersonalized = false, bestSellingProducts = [] }) {
   const { addItem } = useCart();
-  const { isLocal } = useBuyerType();
+  const { buyerType, isLocal } = useBuyerType();
   const { settings } = useSettings();
   const { toggleWishlist, isWishlisted } = useStore();
   const { addToCompare, isInCompare, removeFromCompare } = useCompareStore();
@@ -43,6 +44,26 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
   const [showQuote, setShowQuote] = useState(false);
   const heroRef = useRef(null);
   const wishlisted = isWishlisted(product._id);
+
+  // Issues 2/3/9 (batch 3) + issue 11 (batch 4): every list below is fetched server-side WITHOUT
+  // buyer-type filtering (the server component can't see a guest's localStorage-only buyer-type
+  // choice), so it must be filtered here — same pattern as HomeClientWrapper.jsx uses for the
+  // homepage. Without the per-product check, a product restricted to local-only or
+  // international-only buyers could leak into campaigns/special sections/related/recommended/
+  // best-selling on every product's detail page regardless of who was viewing it. Without the
+  // isCampaignVisibleToBuyer check, a campaign/section itself restricted to one buyer type (its own
+  // targetAudience, separate from the products inside it) would still show to the other buyer type.
+  const visibleSections = (sections || [])
+    .filter(s => isCampaignVisibleToBuyer(s, buyerType))
+    .map(s => ({ ...s, products: (s.products || []).filter(p => isProductVisibleToBuyer(p, buyerType)) }))
+    .filter(s => s.products.length > 0);
+  const visibleCampaigns = (activeCampaigns || [])
+    .filter(c => isCampaignVisibleToBuyer(c, buyerType))
+    .map(c => ({ ...c, items: (c.items || []).filter(i => isProductVisibleToBuyer(i.product, buyerType)) }))
+    .filter(c => c.items.length > 0);
+  const visibleRelated = (relatedProducts || []).filter(p => isProductVisibleToBuyer(p, buyerType));
+  const visibleRecommended = (recommendedProducts || []).filter(p => isProductVisibleToBuyer(p, buyerType));
+  const visibleBestSelling = (bestSellingProducts || []).filter(p => isProductVisibleToBuyer(p, buyerType));
   const inCompare = isInCompare(product._id);
 
   useEffect(() => {
@@ -105,7 +126,6 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
                 <div className="bg-amber-500 text-white px-4 py-2 rounded-xl font-semibold text-sm rotate-[-2deg] shadow-lg">⏰ Pre-Order</div>
               </div>
             )}
-            {product.isOrganic && <div className="absolute top-4 right-4 bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow">🌿 Organic</div>}
           </div>
           {images.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -121,25 +141,26 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
 
         {/* Info */}
         <div className="pdp-info space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              <SeasonLabel isHarvestingSeason={product.isHarvestingSeason} harvestingSeason={product.harvestingSeason} size="md" />
-              {product.isFeatured && <Badge variant="primary">⭐ Featured</Badge>}
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => { if (inCompare) removeFromCompare(product._id); else addToCompare(product); }} className={`p-2 rounded-xl border transition-all text-sm ${inCompare ? 'bg-brand text-white border-transparent' : 'border-gray-200 text-gray-400 hover:border-brand hover:text-brand'}`} title="Compare">
-                <GitCompareArrows className="w-4 h-4" />
-              </button>
-              <button onClick={() => { toggleWishlist(product); toast.success(wishlisted ? 'Removed from wishlist' : '❤️ Added to wishlist!'); }} className={`p-2 rounded-xl border transition-all ${wishlisted ? 'bg-red-500 border-red-500 text-white' : 'border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-400'}`}>
-                <Heart className={`w-4 h-4 ${wishlisted ? 'fill-current' : ''}`} />
-              </button>
-              <button onClick={handleShare} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:border-gray-300 transition-all"><Share2 className="w-4 h-4" /></button>
-            </div>
+          <div className="flex items-start justify-end gap-2">
+            <button onClick={() => { if (inCompare) removeFromCompare(product._id); else addToCompare(product); }} className={`p-2 rounded-xl border transition-all text-sm ${inCompare ? 'bg-brand text-white border-transparent' : 'border-gray-200 text-gray-400 hover:border-brand hover:text-brand'}`} title="Compare">
+              <GitCompareArrows className="w-4 h-4" />
+            </button>
+            <button onClick={() => { toggleWishlist(product); toast.success(wishlisted ? 'Removed from wishlist' : '❤️ Added to wishlist!'); }} className={`p-2 rounded-xl border transition-all ${wishlisted ? 'bg-red-500 border-red-500 text-white' : 'border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-400'}`}>
+              <Heart className={`w-4 h-4 ${wishlisted ? 'fill-current' : ''}`} />
+            </button>
+            <button onClick={handleShare} className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:border-gray-300 transition-all"><Share2 className="w-4 h-4" /></button>
           </div>
 
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{product.name}</h1>
-            {product.scientificName && <p className="text-gray-400 italic text-sm">({product.scientificName})</p>}
+            {product.scientificName && <p className="text-gray-400 italic text-sm mb-2">({product.scientificName})</p>}
+            {/* Issue 6: organic-certified / featured badges live under the product name (not on the
+                image, which previously overlaid isOrganic in the top-right corner of the gallery). */}
+            <div className="flex flex-wrap gap-2">
+              <SeasonLabel isHarvestingSeason={product.isHarvestingSeason} harvestingSeason={product.harvestingSeason} size="md" />
+              {product.isFeatured && <Badge variant="primary">⭐ Featured</Badge>}
+              {product.isOrganic && <Badge variant="success">🌿 Organic Certified</Badge>}
+            </div>
           </div>
 
           {product.reviewCount > 0 && (
@@ -158,7 +179,8 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
               { icon: Leaf, label: 'Location', value: product.harvestingLocation },
               { icon: Calendar, label: 'Season', value: product.harvestingSeason },
               { icon: Award, label: 'Min. Order', value: `${product.minimumOrderQuantity || 1} ${product.unit}` },
-              ...(product.shelfLife ? [{ icon: CheckCircle, label: 'Shelf Life', value: product.shelfLife }] : []),
+              ...(product.isOrganic ? [{ icon: Sprout, label: 'Certification', value: 'Organic Certified' }] : []),
+              ...(product.shelfLife ? [{ icon: CheckCircle, label: 'Shelf Life', value: `${product.shelfLife} day${product.shelfLife === 1 ? '' : 's'}` }] : []),
             ].filter(i => i.value).map(({ icon: Icon, label, value }) => (
               <div key={label} className="flex items-start gap-2 bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3">
                 <Icon className="w-4 h-4 text-brand mt-0.5 flex-shrink-0" />
@@ -251,21 +273,23 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
 
       {/* Special sections (campaigns) — a product CAN legitimately repeat across different
           campaigns here (different discount/badge/metrics each time), so these don't exclude
-          each other. Everything below excludes anything used here. */}
-      {sections.map(s => <SpecialSectionComp key={s._id} section={s} />)}
+          each other. Everything below excludes anything used here. Filtered by buyer type
+          (issues 2/3/9) — see visibleSections above. */}
+      {visibleSections.map(s => <SpecialSectionComp key={s._id} section={s} />)}
 
       {/* Active flash-sale campaigns featuring other products (pre-filtered server-side against
-          everything already shown above) */}
-      <ActiveCampaignsStrip campaigns={activeCampaigns} />
+          everything already shown above, and by buyer type client-side — issues 2/3/9) */}
+      <ActiveCampaignsStrip campaigns={visibleCampaigns} />
 
-      {/* Related products in the same category (pre-filtered, pre-deduped) */}
-      <RelatedProducts products={relatedProducts} categoryId={product.category?._id} currentProductId={product._id} />
+      {/* Related products in the same category (pre-filtered, pre-deduped, buyer-type filtered) */}
+      <RelatedProducts products={visibleRelated} categoryId={product.category?._id} currentProductId={product._id} />
 
-      {/* Personalized recommendations (pre-filtered, pre-deduped) */}
-      <RecommendedForYou products={recommendedProducts} personalized={recommendedPersonalized} />
+      {/* Personalized recommendations (pre-filtered, pre-deduped, buyer-type filtered) */}
+      <RecommendedForYou products={visibleRecommended} personalized={recommendedPersonalized} />
 
-      {/* Real best-sellers, computed from delivered order data (pre-filtered, pre-deduped) */}
-      <BestSellingProducts products={bestSellingProducts} />
+      {/* Real best-sellers, computed from delivered order data (pre-filtered, pre-deduped, buyer-type filtered) */}
+      <BestSellingProducts products={visibleBestSelling} />
+
 
       {/* Reviews */}
       <div id="reviews"><ReviewSection productId={product._id} /></div>

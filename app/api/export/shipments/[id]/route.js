@@ -5,12 +5,14 @@ import connectDB from '@/lib/mongodb';
 import ExportShipment from '@/models/ExportShipment';
 import Settings from '@/models/Settings';
 import { recordAuditLog, moveToRecycleBin } from '@/lib/exportAudit';
-import { calculateShipmentFinancials } from '@/lib/utils';
+import { calculateShipmentFinancials, sanitizeObjectIdFields } from '@/lib/utils';
+
+const OBJECT_ID_FIELDS = ['exportLicense', 'exportCategory', 'bankAccount', 'buyer', 'country'];
 
 const guard = async () => { const s = await getServerSession(authOptions); return ['superAdmin','admin'].includes(s?.user?.role); };
 const getSession = () => getServerSession(authOptions);
 
-const NON_NEGATIVE_FIELDS = ['totalCTN', 'totalNetWeightKg', 'totalGrossWeightKg', 'freightCost', 'goodsCost', 'exportProcessingCost', 'othersCost', 'totalCost', 'receiveAmountBDT', 'orderValueForeign', 'exchangeRateBDT', 'incentive', 'damage'];
+const NON_NEGATIVE_FIELDS = ['totalCTN', 'totalNetWeightKg', 'totalGrossWeightKg', 'estimatedGrossWeightKg', 'freightCost', 'goodsCost', 'exportProcessingCost', 'othersCost', 'totalCost', 'receiveAmountBDT', 'orderValueForeign', 'exchangeRateBDT', 'incentive', 'damage'];
 function validateNonNegative(body) {
   for (const f of NON_NEGATIVE_FIELDS) {
     if (body[f] !== undefined && body[f] !== null && body[f] !== '' && Number(body[f]) < 0) return `${f} cannot be negative`;
@@ -40,6 +42,9 @@ export async function GET(request, { params }) {
   const shipment = await ExportShipment.findById(params.id)
     .populate('buyer', 'name address email phone contactPerson currency')
     .populate('country', 'name code flag')
+    .populate('exportCategory')
+    .populate('bankAccount')
+    .populate('exportLicense')
     .lean();
   return NextResponse.json({ success: !!shipment, shipment });
 }
@@ -48,7 +53,7 @@ export async function PUT(request, { params }) {
   const session = await getSession();
   if (!['superAdmin', 'admin'].includes(session?.user?.role)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
   await connectDB();
-  const body = await request.json();
+  const body = sanitizeObjectIdFields(await request.json(), OBJECT_ID_FIELDS);
   const validationError = validateNonNegative(body);
   if (validationError) return NextResponse.json({ success: false, message: validationError }, { status: 400 });
   const before = await ExportShipment.findById(params.id).lean();

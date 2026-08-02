@@ -90,7 +90,7 @@ export function CartProvider({ children }) {
       const res = await fetch('/api/coupons/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.toUpperCase().trim(), subtotal: amount }),
+        body: JSON.stringify({ code: code.toUpperCase().trim(), subtotal: amount, productIds: items.map(i => i.productId) }),
       });
       const data = await res.json();
       if (data.success) {

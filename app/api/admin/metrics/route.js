@@ -5,7 +5,33 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import User from '@/models/User';
 import Product from '@/models/Product';
+import CurrencyRate from '@/models/CurrencyRate';
 import { hasPermission } from '@/lib/permissions';
+import { fetchLiveRates, STATIC_FALLBACK } from '@/lib/exchangeRates';
+
+// How stale a cached rate can be before we bother refreshing — same threshold /api/currency uses, so
+// this stays consistent with the rates shown anywhere else on the site.
+const STALE_AFTER_MS = 30 * 60 * 1000;
+
+// Same logic /api/currency/route.js runs, just called directly instead of self-fetching over HTTP.
+// An API route calling back into its OWN server via fetch() is a fragile pattern — it depends on
+// NEXTAUTH_URL/host resolution working from inside the server process, can fail in production/
+// serverless environments outright, and turns one request into two. This was almost certainly the
+// actual cause of the reported 500s (it reproduced on every request regardless of query params, which
+// points at something in the always-executed shared path, not the date-range-specific logic).
+async function getCurrencyRates() {
+  try {
+    let rateDoc = await CurrencyRate.findOne().sort('-lastUpdated');
+    const isStale = !rateDoc || (Date.now() - new Date(rateDoc.lastUpdated).getTime() > STALE_AFTER_MS);
+    if (isStale) {
+      const live = await fetchLiveRates();
+      if (live) rateDoc = await CurrencyRate.findOneAndUpdate({}, { rates: live.rates, lastUpdated: new Date(), base: 'USD', source: live.source }, { upsert: true, new: true });
+    }
+    return rateDoc?.rates || STATIC_FALLBACK;
+  } catch {
+    return STATIC_FALLBACK;
+  }
+}
 
 // All financial analytics are based ONLY on delivered orders (per spec item 12).
 // Returned orders deduct the delivery charge from profit automatically.
@@ -36,7 +62,7 @@ export async function GET(request) {
       totalUsers, localUsers, intlUsers,
       totalProducts, activeProducts,
       processingOrders, newOrders,
-      currencyRates,
+      rates,
     ] = await Promise.all([
       Order.find(deliveredQuery).lean(),
       Order.find(returnedQuery).lean(),
@@ -47,10 +73,9 @@ export async function GET(request) {
       Product.countDocuments({ isActive: true }),
       Order.countDocuments({ status: 'processing' }),
       Order.countDocuments({ createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }),
-      fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/currency`).then(r => r.json()).catch(() => ({ rates: {} })),
+      getCurrencyRates(),
     ]);
 
-    const rates = currencyRates.rates || {};
     const rate = (currency === 'BDT' || !rates[currency]) ? 1 : (rates[currency] / (rates.BDT || 1));
     const convert = (bdtAmount) => currency === 'BDT' ? bdtAmount : parseFloat((bdtAmount * rate).toFixed(2));
 
@@ -64,7 +89,7 @@ export async function GET(request) {
     // informational operational figure and, per spec, ONLY ever counted as a LOSS when an order is
     // returned (a delivery charge that was paid out/incurred but never converted into a sale).
     const grossRevenue = deliveredOrders.reduce((a, o) => a + (o.subtotal ?? ((o.total || 0) - (o.deliveryCharge || 0))), 0);
-    const totalCOGS = deliveredOrders.reduce((a, o) => a + o.items.reduce((b, i) => b + ((i.productCost || 0) * (i.quantity || 0)), 0), 0);
+    const totalCOGS = deliveredOrders.reduce((a, o) => a + (o.items || []).reduce((b, i) => b + ((i.productCost || 0) * (i.quantity || 0)), 0), 0);
     const totalDiscounts = deliveredOrders.reduce((a, o) => a + (o.discount || 0) + (o.couponDiscount || 0), 0);
     // Informational only — delivery fees collected on delivered orders. NEVER added into
     // grossRevenue/grossProfit/netProfit; delivery charges contribute zero profit by design.
@@ -83,8 +108,9 @@ export async function GET(request) {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const dailyRevenue = await Order.aggregate([
       { $match: { createdAt: { $gte: thirtyDaysAgo }, status: 'delivered' } },
-      // Issue 41: revenue = product subtotal only, delivery charge excluded (never counted as profit)
-      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: '$subtotal' }, orders: { $sum: 1 } } },
+      // Issue 41: revenue = product subtotal only, delivery charge excluded (never counted as profit).
+      // $ifNull covers any legacy order saved before `subtotal` existed on the schema.
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: { $ifNull: ['$subtotal', { $subtract: [{ $ifNull: ['$total', 0] }, { $ifNull: ['$deliveryCharge', 0] }] }] } }, orders: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
 
@@ -107,9 +133,9 @@ export async function GET(request) {
     const revenueByType = await Order.aggregate([
       { $match: { status: 'delivered', ...baseQuery } },
       { $lookup: { from: 'users', localField: 'user', foreignField: '_id', as: 'userDoc' } },
-      { $unwind: { path: '$userDoc', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
       // Issue 41: revenue = product subtotal only, delivery charge excluded
-      { $group: { _id: '$userDoc.buyerType', revenue: { $sum: '$subtotal' }, count: { $sum: 1 } } },
+      { $group: { _id: '$userDoc.buyerType', revenue: { $sum: { $ifNull: ['$subtotal', { $subtract: [{ $ifNull: ['$total', 0] }, { $ifNull: ['$deliveryCharge', 0] }] }] } }, count: { $sum: 1 } } },
     ]);
 
     return NextResponse.json({
@@ -139,6 +165,7 @@ export async function GET(request) {
       },
     });
   } catch (error) {
+    console.error('GET /api/admin/metrics failed:', error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }

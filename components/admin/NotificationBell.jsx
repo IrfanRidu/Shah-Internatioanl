@@ -13,7 +13,25 @@ export default function NotificationBell() {
   // Notifications the admin has already SEEN (opened the bell while it was showing, or clicked
   // through to it) — these stop counting toward the badge immediately, even before the underlying
   // order/message technically changes state server-side (issue 40: badge should clear once opened).
-  const seenIds = useRef(new Set());
+  // Issue 10: this MUST survive a page reload/navigation remount, or a seen notification's red dot
+  // comes right back — so it's persisted to localStorage. It's held as real React STATE (not a ref)
+  // so updating it reliably triggers a re-render and the badge clears immediately, rather than only
+  // updating on some later unrelated render.
+  const SEEN_KEY = 'si-admin-notif-seen';
+  const [seenIds, setSeenIds] = useState(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(SEEN_KEY) : null;
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+  const markSeen = (ids) => {
+    setSeenIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      try { localStorage.setItem(SEEN_KEY, JSON.stringify([...next].slice(-300))); } catch {}
+      return next;
+    });
+  };
 
   const fetchNotifications = async () => {
     setLoading(true);
@@ -56,18 +74,23 @@ export default function NotificationBell() {
     pollInterval: 60000,
   });
 
-  const unread = notifications.filter(n => !seenIds.current.has(n.id)).length;
+  const unread = notifications.filter(n => !seenIds.has(n.id)).length;
 
   const handleToggleOpen = () => {
     const next = !open;
     setOpen(next);
-    if (next) {
-      fetchNotifications();
-      // Opening the bell counts as "seen" for everything currently listed — the badge clears
-      // immediately rather than waiting for the underlying order/message to change state elsewhere.
-      notifications.forEach(n => seenIds.current.add(n.id));
-    }
+    if (next) fetchNotifications();
   };
+
+  // Opening the bell (or any refresh that happens WHILE it's open) counts as "seen" for everything
+  // currently listed — the badge clears immediately rather than waiting for the underlying
+  // order/message to change state elsewhere, and it's persisted so a reload doesn't undo it (issue 10).
+  useEffect(() => {
+    if (!open || notifications.length === 0) return;
+    const unseenNow = notifications.filter(n => !seenIds.has(n.id)).map(n => n.id);
+    if (unseenNow.length > 0) markSeen(unseenNow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, notifications]);
 
   return (
     <div className="relative">

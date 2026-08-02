@@ -162,5 +162,12 @@ VERIFY COMMAND (proven in batch 1, reuse):
      fully finish this spot-check earlier).
   3. Known accepted gap to mention in final summary: shipment Photos (issue 43) are stored + editable
      but not yet rendered into the generated PDF/print packing list output.
-  4. Zip the whole /home/claude/work/site directory (excluding node_modules/.next) to
-     /mnt/user-data/outputs and present_files it.
+- **FINAL REVIEW DONE.** All 21 touched files listed via `find ... -newer AGENT_PROGRESS.md`. Plain
+  `.js` API/model/lib files (16 of them) syntax-checked clean with `node --input-type=module --check`.
+  JSX files (5) can't run through that parser, so checked paren/brace balance programmatically instead
+  — all five balanced exactly (0 diff). Re-confirmed issues 50/52 fix via `isProductVisibleToBuyer` in
+  lib/utils.js — correct and already covers the homepage-leak case its own comment describes.
+  Issues 51/53 re-confirmed already working from the earlier read-through, no further changes needed.
+- **BATCH 2 COMPLETE.** Zipped /home/claude/work/site (excluding node_modules/.next/.git — none of
+  which existed anyway) to /mnt/user-data/outputs/shah-international-v2.zip. `unzip -tq` reports no
+  errors, 438 files, 587K. Delivered to user via present_files.

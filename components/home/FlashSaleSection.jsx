@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import { useBuyerType } from '@/contexts/BuyerTypeContext';
 import { useCart } from '@/contexts/CartContext';
 import PriceDisplay from '@/components/product/PriceDisplay';
+import { getEffectivePricing } from '@/lib/utils';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -70,11 +71,12 @@ export default function FlashSaleSection({ sale }) {
   const now = new Date();
   if (new Date(sale.endTime) < now || !sale.isActive) return null;
 
-  const products = (sale.items || [])
-    .filter(item => item.product)
-    .map(item => ({ ...item.product, price: item.salePrice, discountPrice: null }));
+  // Issue 9: don't blindly overwrite the product's price with the campaign's salePrice — a product
+  // can already have its own (better) discount. Keep the product untouched and carry the campaign
+  // item alongside it; PriceDisplay's campaignItem prop picks whichever discount is bigger.
+  const campaignEntries = (sale.items || []).filter(item => item.product);
 
-  if (products.length === 0) return null;
+  if (campaignEntries.length === 0) return null;
 
   // ── Admin-set branding (with safe fallbacks) ──────────────────────────
   const bg = sale.backgroundColor || '#1a1a2e';
@@ -90,9 +92,13 @@ export default function FlashSaleSection({ sale }) {
     track.scrollBy({ left: dir === 'left' ? -240 : 240, behavior: 'smooth' });
   };
 
-  const handleAddToCart = (e, product) => {
+  const handleAddToCart = (e, product, campaignItem) => {
     e.preventDefault();
-    addItem(product, 1, !product.isHarvestingSeason);
+    // Issue 9: snapshot whichever discount is bigger into the cart (matches what's displayed),
+    // instead of always the campaign's price regardless of whether it was actually the better deal.
+    const pricing = getEffectivePricing(product, campaignItem);
+    const cartProduct = pricing.hasDiscount ? { ...product, discountPrice: pricing.localPrice } : product;
+    addItem(cartProduct, 1, !product.isHarvestingSeason);
   };
 
   return (
@@ -137,37 +143,40 @@ export default function FlashSaleSection({ sale }) {
             onTouchEnd={() => setTimeout(() => setPaused(false), 1500)}
           >
             <div ref={trackRef} className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth pb-1" style={{ scrollbarWidth: 'none' }}>
-              {products.map((p, i) => (
-                <Link
-                  key={i}
-                  href={`/products/${p.slug}`}
-                  className="bg-white dark:bg-gray-900 rounded-xl overflow-hidden flex-shrink-0 relative"
-                  style={{ width: '150px' }}
-                >
-                  {/* Campaign badge on the product card */}
-                  <div className="absolute top-1.5 left-1.5 z-10">
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow" style={{ backgroundColor: badgeColor, color: badgeTextColor }}>
-                      {badgeText}
-                    </span>
-                  </div>
-                  <div className="relative bg-gray-100" style={{ height: '140px' }}>
-                    {p.images?.[0] && <Image src={p.images[0]} alt={p.name} fill className="object-cover" sizes="150px" />}
-                  </div>
-                  <div className="p-2">
-                    <p className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2 mb-1" style={{ minHeight: '2rem' }}>{p.name}</p>
-                    <PriceDisplay product={p} size="sm" />
-                    {isLocal && (
-                      <button onClick={(e) => handleAddToCart(e, p)} className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: badgeColor }}>
-                        🛒 Add
-                      </button>
-                    )}
-                  </div>
-                </Link>
-              ))}
+              {campaignEntries.map((entry, i) => {
+                const p = entry.product;
+                return (
+                  <Link
+                    key={i}
+                    href={`/products/${p.slug}`}
+                    className="bg-white dark:bg-gray-900 rounded-xl overflow-hidden flex-shrink-0 relative"
+                    style={{ width: '150px' }}
+                  >
+                    {/* Campaign badge on the product card */}
+                    <div className="absolute top-1.5 left-1.5 z-10">
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow" style={{ backgroundColor: badgeColor, color: badgeTextColor }}>
+                        {badgeText}
+                      </span>
+                    </div>
+                    <div className="relative bg-gray-100" style={{ height: '140px' }}>
+                      {p.images?.[0] && <Image src={p.images[0]} alt={p.name} fill className="object-cover" sizes="150px" />}
+                    </div>
+                    <div className="p-2">
+                      <p className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2 mb-1" style={{ minHeight: '2rem' }}>{p.name}</p>
+                      <PriceDisplay product={p} size="sm" campaignItem={entry} />
+                      {isLocal && (
+                        <button onClick={(e) => handleAddToCart(e, p, entry)} className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: badgeColor }}>
+                          🛒 Add
+                        </button>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
 
             {/* Manual nav arrows — always available */}
-            {products.length > 3 && (
+            {campaignEntries.length > 3 && (
               <>
                 <button onClick={() => scroll('left')} className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 bg-white shadow-lg rounded-full p-2 opacity-0 group-hover/track:opacity-100 transition-opacity z-20 hover:bg-gray-50">
                   <ChevronLeft className="w-4 h-4 text-gray-700" />

@@ -64,11 +64,6 @@ export default function AdminProductsPage() {
     else toast.error('Failed');
   };
 
-  const toggleSeason = async (product) => {
-    const res = await fetch(`/api/products/${product._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isHarvestingSeason: !product.isHarvestingSeason }) });
-    if (res.ok) { setProducts(prev => prev.map(p => p._id === product._id ? { ...p, isHarvestingSeason: !p.isHarvestingSeason } : p)); toast.success('Season updated'); }
-  };
-
   const handleBulkDelete = async () => {
     const res = await fetch('/api/admin/products/bulk', {
       method: 'DELETE',
@@ -109,7 +104,6 @@ export default function AdminProductsPage() {
             <option value="deactivate">❌ Deactivate</option>
             <option value="feature">⭐ Mark Featured</option>
             <option value="unfeature">Remove Featured</option>
-            <option value="season">🌿 Mark In Season</option>
             <option value="organic">🍃 Mark Organic</option>
           </select>
           <Button onClick={handleBulk} loading={bulkLoading} variant="primary" size="sm" disabled={!bulkAction}>Apply</Button>
@@ -172,11 +166,9 @@ export default function AdminProductsPage() {
                       <td className="px-4 py-3 text-gray-500 text-xs">{p.priceRangeMin ? `$${p.priceRangeMin}–$${p.priceRangeMax}` : '—'}</td>
                       <td className="px-4 py-3 text-xs text-amber-600 font-medium">{p.productCost ? `৳${p.productCost}` : '—'}</td>
                       <td className="px-4 py-3">
-                        <button onClick={() => toggleSeason(p)} className="text-xs">
-                          {p.isHarvestingSeason
-                            ? <span className="text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-lg">🌿 Season</span>
-                            : <span className="text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-lg">⏰ Off</span>}
-                        </button>
+                        {p.isHarvestingSeason
+                          ? <span className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-lg">🌿 Season</span>
+                          : <span className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-lg">⏰ Off</span>}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{p.quantity || 0} {p.unit}</td>
                       <td className="px-4 py-3">

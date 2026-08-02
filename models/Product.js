@@ -18,6 +18,10 @@ const NutritionalInfoSchema = new mongoose.Schema({
 const ProductSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   scientificName: { type: String, trim: true },
+  // Batch 7 — optional HS (Harmonized System) customs code. When set, auto-fills a shipment item's
+  // hsCode the moment this product is picked in the Shipment Details product table (same
+  // auto-fill-then-editable pattern as scientificName → botanicalName below).
+  hsCode: { type: String, trim: true },
   slug: { type: String, required: true, unique: true },
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
   subcategorySlug: String,
@@ -47,7 +51,7 @@ const ProductSchema = new mongoose.Schema({
   // Details
   certifications: [CertificationSchema],
   nutritionalInfo: NutritionalInfoSchema,
-  shelfLife: String,
+  shelfLife: { type: Number, min: 0 }, // days — auto-formatted as "X days" wherever shown (issue 5)
   storageInstructions: String,
   packagingOptions: [String],
   // Status
@@ -69,5 +73,6 @@ const ProductSchema = new mongoose.Schema({
 ProductSchema.index({ name: 'text', description: 'text', tags: 'text' });
 ProductSchema.index({ category: 1, isActive: 1 });
 ProductSchema.index({ isFeatured: 1, isActive: 1 });
+ProductSchema.index({ harvestingMonths: 1 });
 
 export default mongoose.models.Product || mongoose.model('Product', ProductSchema);

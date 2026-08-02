@@ -1,13 +1,23 @@
 import mongoose from 'mongoose';
 
-// Line-item row (separate sets for packing list, buyer invoice, BD invoice)
+// Line-item row. Batch 7: `items` is now the SINGLE MASTER product table, entered only in the
+// Shipment Details tab — Packing List and Buyer's Invoice are read-only views computed FROM it
+// (see the shipment editor page). `hsCode` added per-row (batch 7 requirement R1) — manually
+// entered, optionally auto-filled from the chosen Product's own hsCode if it has one set.
+// Average Price is NOT stored here — it's always derived (totalValue / quantityKg) so it can never
+// drift out of sync with unitPrice/totalValue; see lib/exportColumns.js's `avgPrice` helper.
 const ShipmentItemSchema = new mongoose.Schema({
   slNo: Number,
   productName: String,
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
   botanicalName: String,
-  packSizeKg: Number,
+  hsCode: String, // batch 7 (R1) — per-product HS code, shown as its own column (Shipment Details/
+                   // Packing List when enabled) or as a sub-line under the name (BD Invoice)
+  ctnSizeKg: Number, // requirement 3: renamed from packSizeKg
   totalCTN: Number,
+  // requirement 4: totalCTN × (matching CtnConfig's ctnWeightGm / 1000) — 0/unset when no saved
+  // CTN Configuration entry matches this row's ctnSizeKg.
+  totalCtnWeightKg: Number,
   quantityKg: Number,
   unitPrice: Number,
   totalValue: Number,
@@ -41,31 +51,69 @@ const ExportShipmentSchema = new mongoose.Schema({
   awbDate: Date,
   pcNo: String,
   pcDate: Date,
+  // Batch 7 (R1) — REX registration number, e.g. "04343". Interpolated into the Buyer's Invoice's
+  // GSP/origin declaration as "BDREX{rexNo}". Auto-fills from the selected Export License (same
+  // pattern as tinNo/binNo below), then stays independently editable per shipment.
+  rexNo: String,
 
-  // Bank
+  // Bank — requirement 6: bankAccount records WHICH saved ExportBankAccount was picked; the 6
+  // fields below are snapshotted from it at selection time (auto-fill), then stay independently
+  // editable, same pattern as botanical name auto-filling from a selected catalog product.
+  bankAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'ExportBankAccount' },
   beneficiaryBank: String,
   accountNo: String,
   branchName: String,
+  bankAddress: String,
   routingNo: String,
   swiftCode: String,
+
+  // Requirement 7: WHICH saved ExportLicense was picked — its tinNo/binNo/letterheadUrl auto-fill
+  // tinNo/binNo below and this shipment's effective document letterhead (see
+  // lib/exportDocuments.js's resolveLetterheadUrl), falling back to the global company letterhead
+  // when no license is selected.
+  exportLicense: { type: mongoose.Schema.Types.ObjectId, ref: 'ExportLicense' },
 
   // Base currency — set once by admin before documentation begins
   // All financial values in this shipment are in this currency (converted from USD live rate)
   baseCurrency: { type: String, default: 'EUR' },
 
-  // Line items — THREE independent sets:
-  // 1. packingItems  → Packing List (no price, just weights/quantities)
-  // 2. buyerItems    → Buyer's Commercial Invoice (price in baseCurrency)
-  // 3. bdItems       → Bangladeshi Invoice (price in BDT or baseCurrency)
-  // Changes in one DO NOT affect the others.
-  items: [ShipmentItemSchema],       // legacy / packing list
-  buyerItems: [ShipmentItemSchema],  // Buyer's Invoice — independent
-  bdItems: [ShipmentItemSchema],     // BD Invoice — independent
+  // Requirement 10: drives this shipment's incentive calculation (see ExportCategory's own 4
+  // incentive-related fields) and its card image on the buyer's shipment list (requirement 11).
+  exportCategory: { type: mongoose.Schema.Types.ObjectId, ref: 'ExportCategory' },
+
+  // Batch 7 architecture (R1-R4): `items` is now the ONE master product table, entered only in
+  // the Shipment Details tab. Packing List and Buyer's Invoice are READ-ONLY views computed from
+  // `items` (filtered to each document's own column set — see lib/exportColumns.js) — they no
+  // longer have their own editable data, so they can never disagree with Shipment Details.
+  // `bdItems` is repurposed: a SMALL, admin-editable set of consolidated override rows for the BD
+  // Invoice specifically (per R4, BD Invoice shows the shipment as one or a few HS-code lines, not
+  // one row per product). It CONTINUOUSLY auto-syncs to the Export Category + shipment totals for as
+  // long as `bdItemsLocked` is false — the moment the admin edits a row, or adds/removes one, the
+  // editor flips this to true and BD Invoice becomes the admin's own independently-owned data from
+  // then on (a "Re-fill from Shipment Details" button flips it back to false on request). Batch 7
+  // round 2: this replaced an earlier "seed once, then freeze forever" design, which left BD Invoice
+  // showing stale numbers whenever the admin kept adding products to Shipment Details after BD
+  // Invoice had already auto-seeded once — exactly the mismatch a real test run surfaced.
+  // `buyerItems` is kept in the schema for backward compatibility with shipments saved before this
+  // batch (so no old data is lost) but is no longer read or written by the UI going forward.
+  items: [ShipmentItemSchema],       // MASTER — Shipment Details, mirrored (read-only) into Packing List & Buyer's Invoice
+  buyerItems: [ShipmentItemSchema],  // legacy/unused — kept only so pre-batch-7 shipments don't lose data
+  bdItems: [ShipmentItemSchema],     // BD Invoice — small admin-editable override rows, auto-synced from category + totals until locked
+  bdItemsLocked: { type: Boolean, default: false },
 
   // Totals
   totalCTN: Number,
   totalNetWeightKg: Number,
   totalGrossWeightKg: Number,
+  // Requirement 4: auto-calculated from items (Σ totalCtnWeightKg + totalNetWeightKg), persisted so
+  // it's visible in Shipment Details even after totalGrossWeightKg has been manually overridden.
+  // totalGrossWeightKg itself starts out equal to this and keeps auto-following it as items change
+  // UNTIL grossWeightOverridden flips true (the admin directly edited Gross Weight themselves) — at
+  // that point it detaches and stays admin-controlled, per "won't change the estimated gross weight"
+  // (a one-way relationship: the estimate can drive the shared field, a manual edit never drives the
+  // estimate back).
+  estimatedGrossWeightKg: Number,
+  grossWeightOverridden: { type: Boolean, default: false },
   freightCost: Number,          // BDT
   freightCostCurrency: { type: String, default: 'BDT' },
   goodsCost: Number,            // BDT

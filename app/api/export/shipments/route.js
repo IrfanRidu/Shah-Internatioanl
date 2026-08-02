@@ -5,7 +5,11 @@ import connectDB from '@/lib/mongodb';
 import ExportShipment from '@/models/ExportShipment';
 import Settings from '@/models/Settings';
 import { recordAuditLog } from '@/lib/exportAudit';
-import { calculateShipmentFinancials } from '@/lib/utils';
+import { calculateShipmentFinancials, sanitizeObjectIdFields } from '@/lib/utils';
+
+// ObjectId-reference fields on ExportShipment that an unset <select> can send as '' — see
+// sanitizeObjectIdFields's own comment in lib/utils.js for why this matters.
+const OBJECT_ID_FIELDS = ['exportLicense', 'exportCategory', 'bankAccount', 'buyer', 'country'];
 
 // Issue 46: "calculations should be performed on both frontend (instant UI) and backend (data
 // consistency)". The frontend shows a live preview as the admin types, but the values actually
@@ -52,6 +56,8 @@ export async function GET(request) {
     const shipments = await ExportShipment.find(query)
       .populate('buyer', 'name address email phone contactPerson currency')
       .populate('country', 'name code flag')
+      .populate('exportCategory', 'name image')
+      .populate('exportLicense', 'letterheadUrl')
       .sort({ date: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -62,7 +68,7 @@ export async function GET(request) {
 
 // Issue 46: numeric fields that logically can never be negative — validated server-side so a bad
 // value can never enter the DB even if a client-side check is bypassed.
-const NON_NEGATIVE_FIELDS = ['totalCTN', 'totalNetWeightKg', 'totalGrossWeightKg', 'freightCost', 'goodsCost', 'exportProcessingCost', 'othersCost', 'totalCost', 'receiveAmountBDT', 'orderValueForeign', 'exchangeRateBDT', 'incentive', 'damage'];
+const NON_NEGATIVE_FIELDS = ['totalCTN', 'totalNetWeightKg', 'totalGrossWeightKg', 'estimatedGrossWeightKg', 'freightCost', 'goodsCost', 'exportProcessingCost', 'othersCost', 'totalCost', 'receiveAmountBDT', 'orderValueForeign', 'exchangeRateBDT', 'incentive', 'damage'];
 function validateNonNegative(body) {
   for (const f of NON_NEGATIVE_FIELDS) {
     if (body[f] !== undefined && body[f] !== null && body[f] !== '' && Number(body[f]) < 0) {
@@ -77,7 +83,7 @@ export async function POST(request) {
     const session = await getServerSession(authOptions);
     if (!['superAdmin', 'admin'].includes(session?.user?.role)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
     await connectDB();
-    const body = await request.json();
+    const body = sanitizeObjectIdFields(await request.json(), OBJECT_ID_FIELDS);
     const validationError = validateNonNegative(body);
     if (validationError) return NextResponse.json({ success: false, message: validationError }, { status: 400 });
     const finalBody = await withComputedFinancials(body);

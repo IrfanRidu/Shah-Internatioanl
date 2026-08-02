@@ -9,7 +9,6 @@ import { useStore } from '@/store/useStore';
 import { useCompareStore } from '@/store/compareStore';
 import SeasonLabel from './SeasonLabel';
 import PriceDisplay from './PriceDisplay';
-import Badge from '@/components/ui/Badge';
 import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
@@ -55,8 +54,6 @@ export default function ProductCard({ product }) {
         {/* Top badges */}
         <div className="absolute top-2 left-2 flex flex-col gap-1">
           <SeasonLabel isHarvestingSeason={product.isHarvestingSeason} />
-          {product.isFeatured && <Badge variant="primary" className="text-xs">⭐</Badge>}
-          {product.isOrganic && <Badge variant="success" className="text-xs">🌿 Organic</Badge>}
         </div>
         {/* Top right actions */}
         <div className="absolute top-2 right-2 flex flex-col gap-1">
@@ -95,6 +92,13 @@ export default function ProductCard({ product }) {
       <div className="p-2.5 flex flex-col flex-1">
         <p className="text-xs text-gray-400 truncate leading-tight h-4">{product.category?.name || '\u00A0'}</p>
         <h3 className="font-semibold text-gray-900 dark:text-white text-xs leading-tight mt-0.5 line-clamp-2" style={{ minHeight: '2rem' }}>{product.name}</h3>
+        {/* Issue 6: organic/featured badges moved off the image to right under the product name. */}
+        {(product.isFeatured || product.isOrganic) && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {product.isFeatured && <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">⭐ Featured</span>}
+            {product.isOrganic && <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 dark:bg-green-900/20 px-1.5 py-0.5 rounded">🌿 Organic</span>}
+          </div>
+        )}
         <div className="mt-auto">
           <PriceDisplay product={product} size="sm" />
           {isLocal ? (

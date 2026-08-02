@@ -54,9 +54,29 @@ export default function ExportDashboardPage() {
   // shipment, since it applies to every shipment's documents until replaced.
   const [letterheadUrl, setLetterheadUrl] = useState('');
   const [uploadingLH, setUploadingLH] = useState(false);
+  // Batch 7 (R1) — exporter name/address, previously hardcoded text scattered across the print/PDF
+  // code, now a single editable source shown on every Shipment Details tab and every document.
+  const [exporterInfo, setExporterInfo] = useState({ exporterName: '', exporterAddress: '' });
+  const [savingExporter, setSavingExporter] = useState(false);
+  const [exporterDraft, setExporterDraft] = useState(null); // non-null while the small edit form is open
   useEffect(() => {
-    fetch('/api/settings').then(r => r.json()).then(d => setLetterheadUrl(d?.settings?.exportLetterheadUrl || '')).catch(() => {});
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      setLetterheadUrl(d?.settings?.exportLetterheadUrl || '');
+      setExporterInfo({ exporterName: d?.settings?.exporterName || 'Shah International', exporterAddress: d?.settings?.exporterAddress || '' });
+    }).catch(() => {});
   }, []);
+  const saveExporterInfo = async () => {
+    if (!exporterDraft) return;
+    setSavingExporter(true);
+    const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(exporterDraft) });
+    const d = await r.json();
+    setSavingExporter(false);
+    if (d.success) {
+      setExporterInfo({ exporterName: d.settings?.exporterName || '', exporterAddress: d.settings?.exporterAddress || '' });
+      setExporterDraft(null);
+      toast.success('Exporter details updated — now used on every shipment document');
+    } else toast.error(d.message || 'Failed to save');
+  };
   const handleLetterheadUpload = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setUploadingLH(true);
@@ -120,34 +140,69 @@ export default function ExportDashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <Globe2 className="w-6 h-6 text-brand" /> Export Dashboard
           </h1>
-          <p className="text-sm text-gray-500">Manage countries, buyers, shipments, documents and analytics</p>
+          <p className="text-sm text-gray-500">Start with an Export Category, then manage countries, buyers, shipments, documents and analytics</p>
         </div>
       </div>
 
-      {/* Company letterhead — global, used on every shipment's documents until replaced (issue 39) */}
-      <div className="bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 p-4 mb-6 flex items-center gap-4 flex-wrap">
-        {letterheadUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={letterheadUrl} alt="Current letterhead" className="h-12 w-auto max-w-[160px] object-contain bg-white rounded-lg border border-amber-200 p-1" />
-        )}
-        <div className="flex-1 min-w-[200px]">
-          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Company Letterhead</p>
-          <p className="text-xs text-amber-600 mt-0.5">Used as the header on every printed/downloaded shipment document, for every country and buyer, until you replace it here</p>
-          {letterheadUrl && <p className="text-xs text-green-600 mt-1">✓ Currently set</p>}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        {/* Company letterhead — global, used on every shipment's documents until replaced (issue 39) */}
+        <div className="bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 p-4 flex items-center gap-4 flex-wrap">
+          {letterheadUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={letterheadUrl} alt="Current letterhead" className="h-12 w-auto max-w-[160px] object-contain bg-white rounded-lg border border-amber-200 p-1" />
+          )}
+          <div className="flex-1 min-w-[160px]">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Company Letterhead</p>
+            <p className="text-xs text-amber-600 mt-0.5">Used as the header on every printed/downloaded shipment document, for every country and buyer, until you replace it here</p>
+            {letterheadUrl && <p className="text-xs text-green-600 mt-1">✓ Currently set</p>}
+          </div>
+          <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-amber-300 rounded-xl cursor-pointer text-sm font-medium text-amber-700 hover:bg-amber-50 transition-all">
+            <Upload className="w-4 h-4" /> {uploadingLH ? 'Uploading...' : letterheadUrl ? 'Replace' : 'Upload Letterhead'}
+            <input type="file" accept="image/*" onChange={handleLetterheadUpload} className="hidden" disabled={uploadingLH} />
+          </label>
         </div>
-        <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-amber-300 rounded-xl cursor-pointer text-sm font-medium text-amber-700 hover:bg-amber-50 transition-all">
-          <Upload className="w-4 h-4" /> {uploadingLH ? 'Uploading...' : letterheadUrl ? 'Replace' : 'Upload Letterhead'}
-          <input type="file" accept="image/*" onChange={handleLetterheadUpload} className="hidden" disabled={uploadingLH} />
-        </label>
+
+        {/* Batch 7 (R1) — exporter name/address, shown on every Shipment Details tab & document */}
+        <div className="bg-green-50 dark:bg-green-900/20 rounded-2xl border border-green-200 dark:border-green-900 p-4">
+          {exporterDraft ? (
+            <div className="space-y-2">
+              <input value={exporterDraft.exporterName} onChange={e => setExporterDraft(p => ({ ...p, exporterName: e.target.value }))}
+                placeholder="Exporter name" className="input-field py-1.5 text-sm w-full" />
+              <textarea value={exporterDraft.exporterAddress} onChange={e => setExporterDraft(p => ({ ...p, exporterAddress: e.target.value }))}
+                placeholder="Exporter address" rows={2} className="input-field py-1.5 text-sm w-full resize-none" />
+              <div className="flex gap-2">
+                <Button variant="primary" onClick={saveExporterInfo} loading={savingExporter}>Save</Button>
+                <Button variant="ghost" onClick={() => setExporterDraft(null)}>Cancel</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex-1 min-w-[160px]">
+                <p className="text-sm font-semibold text-green-800 dark:text-green-300">Exporter Details</p>
+                <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">{exporterInfo.exporterName || 'Shah International'}</p>
+                <p className="text-xs text-green-600 mt-0.5">{exporterInfo.exporterAddress}</p>
+              </div>
+              <button onClick={() => setExporterDraft(exporterInfo)}
+                className="px-4 py-2 bg-white dark:bg-gray-900 border border-green-300 rounded-xl text-sm font-medium text-green-700 hover:bg-green-50 transition-all">
+                Edit
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Top-level nav: Countries stays as an in-page tab; Analytics & Archive
-          navigate directly on a single click (previously required a click on
-          the tab, then a second click on a "Open Export Analytics →" link). */}
+      {/* Top-level nav: Export Categories comes first — it's the dashboard's central concept
+          (batch 7): pick/create a category before a shipment, since it drives that shipment's
+          document format. Countries stays as an in-page tab; the rest navigate directly on a
+          single click. */}
       <div className="flex gap-2 mb-6 border-b border-gray-100 dark:border-gray-800 pb-2 flex-wrap">
+        <Link href="/admin/export-dashboard/categories"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
+          🏷️ Export Categories
+        </Link>
         <button onClick={() => setTab('countries')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${tab === 'countries' ? 'text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-          style={tab === 'countries' ? { backgroundColor: 'var(--color-primary)' } : {}}>
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${tab === 'countries' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
           🌍 Countries & Buyers
         </button>
         <Link href="/admin/export-dashboard/analytics"
@@ -157,6 +212,10 @@ export default function ExportDashboardPage() {
         <Link href="/admin/export-dashboard/archive"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
           🗂️ Export Archives
+        </Link>
+        <Link href="/admin/export-dashboard/settings"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
+          ⚙️ Settings
         </Link>
       </div>
 

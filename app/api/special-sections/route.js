@@ -15,7 +15,7 @@ export async function GET(request) {
     const isAdmin = isAdminRole(session);
     const query = adminView && isAdmin ? {} : { isActive: true };
     if (position) query.position = { $in: [position, 'both'] };
-    const sections = await SpecialSection.find(query).populate('products', 'name images slug price discountPrice priceRangeMin priceRangeMax isHarvestingSeason unit').sort('displayOrder').lean();
+    const sections = await SpecialSection.find(query).populate('products', 'name images slug price discountPrice priceRangeMin priceRangeMax isHarvestingSeason unit availableForLocal availableForInternational').sort('displayOrder').lean();
     return NextResponse.json({ success: true, sections });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
