@@ -6,6 +6,7 @@ import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
+import { resizeImageFile } from '@/lib/clientImageResize';
 import { AVAILABLE_COLUMNS, COLUMN_LABELS, DEFAULT_DOCUMENT_COLUMNS, DOC_KEYS, DOC_LABELS } from '@/lib/exportColumns';
 
 const EMPTY = {
@@ -63,14 +64,13 @@ export default function ExportCategorySection({ currency }) {
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: reader.result, folder: 'export-categories' }) });
-      const data = await res.json();
-      if (data.success) set('image', data.url); else toast.error('Image upload failed');
-      setUploading(false);
-    };
-    reader.readAsDataURL(file);
+    // Resized client-side first — see resizeImageFile's own comment on why that matters on Vercel.
+    resizeImageFile(file, { maxDimension: 1200, quality: 0.85 }).then((dataUrl) => {
+      fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'export-categories' }) })
+        .then((res) => res.json())
+        .then((data) => { if (data.success) set('image', data.url); else toast.error(data.message || 'Image upload failed'); })
+        .finally(() => setUploading(false));
+    }).catch((err) => { toast.error(err.message || 'Image upload failed'); setUploading(false); });
   };
 
   const handleSave = async () => {

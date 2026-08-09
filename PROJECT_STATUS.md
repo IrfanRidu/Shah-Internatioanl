@@ -406,7 +406,291 @@ seeing the actual server error. Fixed by escaping regex special characters in `b
 from the same crash, not just the export dashboard's product picker. Added test coverage for this
 in `tests/unit/utils.test.js`.
 
-## 16. Setup Reminder
+## 16. Fix Round — 2026-08-03 — TT Configuration, Draft/Active Lifecycle, License Details, Document
+Export Formats + Editable Text, and the Incentive Application Workflow
+
+A large batch covering 16 requirements from a fresh spec document — the biggest single addition
+since the export dashboard was first built. Summary by area (see AGENT_PROGRESS_8.md in this same
+zip for the full phase-by-phase build log, design-decision reasoning, and command history):
+
+**Shipment lifecycle (draft → active).** A shipment now starts as a draft and stays one across
+repeated saves ("Save Draft") with zero audit logging, until an explicit "Save & Activate" (or
+first save with activation) moves it to active — the exact moment its audit trail begins. Once
+active, a shipment can never be silently pushed back to draft (enforced server-side, not just in the
+UI), so "logging never turns off" holds even against a replayed/crafted request. Deleting a draft is
+a plain, untracked hard delete (nothing to restore, since nothing was ever logged); deleting an
+active-or-later shipment still goes through the existing recycle-bin flow unchanged.
+
+**Compact selector cards.** Base Currency / Export Category / Beneficiary Bank / Export License
+used to each render as a full-width banner (~180px tall apiece); now a single 4-across (2-across on
+tablet) grid of small cards carries the same functionality in a fraction of the space.
+
+**TT Configuration.** A new section in Shipment Details, right after Financial Details & Profit
+Analysis, holding the (renamed) Rate in BDT and Incentive fields moved out of that section, plus a
+repeatable TT Number / TT Date / TT Value list. Order Value stopped being a manually-typed field —
+it's now always exactly the Packing List's total, live. Receive Amount (BDT) uses that Order Value
+until at least one TT entry has a value, at which point the TT total takes over for that calculation
+everywhere it's used (the shipment editor's own preview, and Export Analytics).
+
+**License Settings.** Export Registration Certificate Number, Address, Owner Name, Phone, and Email
+added to each saved license.
+
+**Document export formats + editable text.** Packing List, Buyer's Invoice, and BD Invoice can now
+be downloaded as DOCX or XLSX in addition to the existing PDF, via a format selector next to the
+existing Print/Download actions. A new "Edit Text" option lets an admin adjust the declaration
+paragraph and signatory title per shipment, per document, before generating any of the above —
+Print, Download, and every format all read from the same saved override, so they can never drift out
+of sync with each other.
+
+**Incentive Application workflow.** An entirely new "Incentive" section of the export dashboard:
+shipments eligible for a government incentive claim list under "Available for Incentive
+Application" (oldest first); an admin bulk-selects up to 10 sharing one Export Category and one
+Export License and proceeds to create a serially-numbered, renamable "Incentive Application" card;
+from there it can be viewed (Incentive Details / Ka Form / Others tabs — the live BDT rate plus an
+optional manual-rate override that, once set, becomes the rate for every member shipment everywhere
+a rate is used or shown), deleted, or marked claimed. Claiming freezes the rate, marks every member
+shipment completed (which is all Export Archive needed to pick them up automatically — no changes
+needed there), and fully locks them against further edits until the application is unclaimed.
+
+**Bugs found and fixed along the way (not part of the 16 requirements, but blocking or adjacent to
+this work):**
+- The shipment editor's footer "Save Shipment" button called its save handler with no argument,
+  which — once that handler started distinguishing "save as draft" from "save and activate" for
+  this batch — would have made that specific button always behave as a draft-preserving save,
+  silently never activating any shipment saved through it. Fixed to match the header buttons.
+- The buyer-page shipment delete handler never checked its DELETE request's response — it always
+  showed "Shipment deleted" regardless of whether the server actually deleted anything. Harmless
+  before (deletes essentially never failed), but this batch adds real, expected rejection cases
+  (a locked or still-grouped shipment), so it was fixed to surface the real outcome.
+- A systemic gap across `app/api/export/`: several routes called `.populate()` on a field without
+  ever importing the model that field references, relying on that model happening to already be
+  registered via some other route's earlier import. Harmless on a single long-running Node process
+  once enough traffic has flowed through the app, but a real risk on a fresh cold start (serverless,
+  or the first request after a restart) if the affected route is hit first. Every populate call
+  under `app/api/export/` now has its model imported directly in the same file — covers both the
+  new Incentive Application routes and four pre-existing instances (buyers/shipments populating
+  country/category/license/bank-account) found during the same sweep.
+
+## 17. Batch 9 — Export Contract, Ka Form, Stamp Application, Readable Activity Log (R18-23)
+
+Continuing directly from batch 8's own output (this batch's input zip was literally batch 8's
+deliverable). Full detail lives in `AGENT_PROGRESS_9.md` and `KA_FORM_AND_STAMP_REFERENCE.md` — this
+section is the same kind of durable summary the other 16 sections already are.
+
+**New hierarchy layer.** Export Contract now sits between Buyer and Shipments (country → buyer →
+Export Contract → shipments, was country → buyer → shipments) — a new top-level entity (contract
+no/date/Export Category/value/base currency) with its own CRUD, audit logging, and recycle-bin
+support, at the same tier as Buyer/Country rather than the config-only entities that stay
+deliberately unlogged. The buyer page itself now lists Export Contracts; a new page underneath it
+lists the shipments under one contract. Pre-batch-9 shipments (which predate this entity) get a
+dedicated "Shipments without a Contract" fallback view rather than silently losing visibility.
+
+**Incentive grouping rule changed.** The bulk-select-for-incentive constraint moved from "same
+Export Category + same Export License" to "same Export Contract No + same Export License" (a
+contract already implies one category, so this is strictly narrower/more correct) — plus a same-
+Base-Currency requirement that wasn't explicitly asked for but is necessary: the Ka Form sums every
+member shipment into single "(FC)" totals with one currency label, and mixing currencies there would
+silently produce a wrong number with no error surfaced anywhere.
+
+**The Ka Form is now real**, not the notes+uploads stub batch 8's own R14 shipped (that stub was
+explicitly flagged at the time as "no field spec was given... flagged for the user to refine" — this
+batch is that refinement arriving). Three reference PDFs were provided mid-batch (Ka Form English,
+Stamp Application English + Bengali) and fully extracted into `KA_FORM_AND_STAMP_REFERENCE.md` —
+every section, column, formula, and default value in the generator was cross-checked against the
+real document's own numbers, not just the original prose spec (which turned out to be missing 2 of
+the form's 8 sections entirely, and had one field formula that the real PDF corrected). The
+Incentive Details tab now shows the full Section A-H data model (fetched + a handful of genuinely
+admin-editable pieces), and a Ka Form tab renders/downloads/prints the actual A3 document in English
+and Bengali, in PDF/DOCX/XLSX, with an edit option for every boilerplate label. "Incentive after
+costing" (Tax + Application Cost + Others Cost, from the Export Category's own rate settings,
+deducted from the government form's gross Payable Incentive Amount) is a new internal layer on top,
+distributed equally across member shipments and automatically written into each one's TT
+Configuration "Incentive" field — which Export Analytics already summed, so no analytics-route
+change was needed, just correctly populating that one field.
+
+**Stamp Application** (Others tab) — a full 5-paragraph/3-page bank undertaking document, English
+verbatim from the reference PDF and Bengali via a genuine clean-font PDF text extraction (not a
+translation), both with the same token-substitution treatment, downloadable/printable/editable the
+same way as the Ka Form.
+
+**Activity log is now readable.** "View details" used to `JSON.stringify` the raw before/after
+snapshots into a `<pre>` block — technically complete but illegible, exactly the complaint raised.
+The underlying data was already correct (full snapshots, stored since early in this project); this
+was purely a display gap, fixed with a proper field-by-field diff (human labels, formatted dates/
+currency/arrays, only the fields that actually changed for updates).
+
+**Bugs found and fixed along the way (not part of R18-23, but found via code review while wiring
+the new grouping cascade in):**
+- Naively wiring the new "recompute the group when any member shipment's own data changes" trigger
+  would have produced a redundant, near-duplicate audit-log entry for the shipment that was JUST
+  saved+logged by that same request (`recordAuditLog` never deduplicates — confirmed by reading it).
+  Fixed with a `skipLogForId` option threaded through the shared cascade function: that one
+  shipment's derived fields still get silently corrected, just without a second log line; every
+  other sibling in the group still logs normally, since for them it's a genuinely new change.
+- The audit log's own `labelFor` helper had no case for the new `exportContract` entity type
+  (would have fallen through to a raw database ID instead of the contract number).
+- Incentive Applications were never actually cascaded on creation — the very first computation of
+  the group's rate-driven derived fields only happened on some LATER edit. Batch 9's own R20
+  distribution needed this fixed to satisfy "will appear automatically" from the moment an
+  application exists, not just after a subsequent edit touches it.
+
+## 18. Batch 10 — Ka Form/Stamp Application Exact-Match Rewrite, Bengali Rendering, Letterhead-as-Background, and 5 Reported Bugs (R24)
+
+Full detail lives in `AGENT_PROGRESS_10.md` and this file's own `ROADMAP.md` working notes (kept
+through the session for resumability) — this section is the same kind of durable summary the other
+17 sections already are. Input this round: the existing v12 zip plus 4 new reference PDFs (a real
+Bengali Ka Form reference existed for the first time — batch 9 had only ever had the English one)
+and a sample invoice photo showing what a document printed on the physical company letterhead
+actually looks like, alongside 9 reported bugs.
+
+**Bengali rendering was fundamentally broken, and the fix is a different rendering path, not a font
+swap.** jsPDF's built-in fonts have zero Bengali glyphs, but embedding a Unicode Bengali font on its
+own isn't sufficient either — jsPDF has no OpenType shaping engine at all, so even with the right
+glyphs available it draws one glyph per Unicode codepoint with no conjunct ligatures and no vowel-
+sign reordering, which is still wrong for real Bengali (conjuncts and the very common pre-base vowel
+sign are basic to the script, not edge cases). Fixed by rendering Bengali text to an offscreen canvas
+using a bundled web font first — canvas text goes through the browser's real text-shaping engine, the
+same one used for ordinary page text — then embedding the result as an image via `doc.addImage()`
+instead of `doc.text()`. The font itself (`public/fonts/FreeSansBengali.ttf`) is GNU FreeSans,
+subsetted to Bengali + basic Latin with `pyftsubset` (1.8MB → 218KB), chosen because it has full
+Bengali OpenType shaping tables (confirmed by inspecting its GSUB script/feature tags directly, not
+assumed) — verified end-to-end by rendering real Bengali test strings with known-tricky conjuncts
+through an actual browser-grade shaping engine before trusting it in the app. See
+`lib/bengaliText.js` and `public/fonts/FONT_LICENSE.txt`.
+
+**Ka Form and Stamp Application rebuilt against the real reference PDFs, pixel-by-pixel.** Rather
+than trust `pdftotext` extraction (which reorders/garbles complex Bengali conjuncts on these specific
+documents even though the PDFs themselves render correctly — the exact same illegible-when-copy-
+pasted phenomenon `KA_FORM_AND_STAMP_REFERENCE.md` already flagged for the Stamp Application last
+batch), every section, table, column, and font choice below was confirmed by rasterizing the actual
+PDFs to images and reading them directly. Real, previously-unknown differences found this way:
+- English Ka Form is A3; Bengali is A4 — genuinely different physical page sizes, not a simplification.
+- The TT table (Section C) splits into two side-by-side tables past 5 rows in English (confirmed:
+  left column always exactly 5 rows); Bengali keeps one full-width table regardless of row count
+  (narrower page, no room to split) — this is real and now handled per-language.
+- Section E has 7 columns in English but only 6 in Bengali (two columns merge into one stacked cell).
+- Section F was flat-out wrong in the previous implementation: only 3 columns existed, with 3 more
+  figures squeezed into a merged footer text line. Both reference PDFs (both languages) show a real
+  6-column table with a numbered sub-header row. Rebuilt properly, in PDF, DOCX, and XLSX.
+- Table headers use a light gray fill in the reference, sampled directly from the rendered pixels
+  (232,232,232) — was plain white.
+- Every "(FC)" abbreviation is spelled out as "...in Foreign Currency" in the real forms — fixed
+  everywhere it appeared (issue 4's literal ask), across all three output formats.
+- Bengali digit convention is genuinely mixed and field-specific, confirmed by zooming into individual
+  cells: the Ka Form uses Bengali numerals for serial numbers, BDT/Taka amounts, and the exchange
+  rate, but Latin numerals for foreign-currency amounts, dates, quantities, and reference codes —
+  even within the same table row. The Stamp Application, by contrast, uses Bengali numerals for
+  everything. The previous implementation applied one rule to both.
+- Stamp Application now forces exactly 3 pages via explicit break markers placed at the same 2 points
+  the real documents break (confirmed from `pdftotext`'s own page-boundary positions), rather than
+  relying on vertical-overflow math that doesn't reliably reproduce a fixed page count.
+- Bengali/A4 table density was tuned against measured real row heights (pulled directly from the
+  reference PDF's pixels, not estimated) so a typical application still fits the single page the
+  reference itself is; a pagination safety net (redraws the letterhead on any spillover page) was
+  added regardless, since an unusually large application has no fixed upper bound on row count.
+
+**Letterhead is now a real page background, not a synthesized header, everywhere.** New shared
+`lib/pdfLetterhead.js` used identically by every PDF generator (Packing List, Buyer's Invoice, BD
+Invoice, Ka Form, Stamp Application): the uploaded image is drawn full-width at the top of every
+page, height derived from its own aspect ratio (never distorted, never cropped), with all
+programmatic header code (the coded green banner + drawn company name/address/phone/etc.) deleted
+outright rather than kept as a fallback, per the explicit request. The Cloudinary upload preset for
+letterheads was also widened (was a 1200×400 landscape-biased box that would have crushed a portrait/
+full-page-shaped upload) to a generous, aspect-ratio-agnostic ceiling at real print resolution.
+
+**5 other reported bugs, each a genuine, narrow root cause:**
+- *Product search always empty*: the catalog query excluded any product missing an `isActive` field
+  — which happens for anything not created through one specific code path — while every OTHER
+  boolean visibility flag in that same function already used a form that stays correct for that case.
+  One-line fix to match the established pattern.
+- *"Payable Incentive (BDT)" / live rate*: a live exchange-rate hook already existed and was already
+  being fetched and displayed in a small rate card, but its result was never actually fed into the
+  incentive calculation, which used the shipment's own stored (manually-entered-once) rate
+  regardless. Wired it in with manual-rate and claimed-and-locked-rate still taking precedence.
+  Relabeled to "Receivable Incentive (BDT)".
+- *Whole page reloading on every field edit*: every save-then-refresh call site shared the same
+  loading flag as the page's true initial load, which a `if (loading) return <Loader />` a few lines
+  down uses to unmount the entire page. Saving so much as one field replaced the whole page with a
+  spinner and remounted everything from scratch. Fixed by making background refreshes silent by
+  default and reserving the full-page loader for the one genuine initial-mount call.
+- *Incentive not appearing on Shipment Details or counting in Export Analytics*: `calculateShipment-
+  Financials` computed `netProfit` using the incentive value but never actually included `incentive`
+  itself in its returned object, so every caller that persists via `{...computed}` — critically the
+  cascade that's supposed to write each shipment's distributed share of a claimed application back
+  onto it — was silently never writing the field to the database at all, no matter how correctly the
+  surrounding distribution logic (already fully wired, from batch 9) had just calculated it. One
+  field added to a return statement; both pages read/sum that same stored field directly.
+- *No way to delete a shipment from Export Archive*: the backend (recycle-bin snapshot + audit log
+  entry + guards against deleting a claimed/locked/pending-incentive shipment) already existed and
+  was already correct, as did a full Recycle Bin restore UI on the Audit Log page — the Archive page
+  itself just never exposed a delete button to call it. Added one, matching this codebase's own
+  established delete-confirmation pattern from the buyer/contract page.
+
+## 19. Batch 11 — Follow-up Correction Round: Ka Form/Stamp Application Back to Plain Paper, Signature Block Removed, Bracket Style, EXP Year, Vercel Hardening (R25)
+
+Direct feedback on batch 10's own output, addressed in the same session's immediate next round. Full
+detail lives in `AGENT_PROGRESS_11.md` — this section is the same kind of durable summary the other
+18 sections already are.
+
+**Ka Form and Stamp Application reverted off the letterhead, onto plain paper — batch 10's issue 9
+letterhead-as-background treatment was correct for Packing List/Invoice but wrong for these two.**
+Ka Form: plain A3, both languages now (previously English A3 / Bengali A4, matching each one's own
+real reference page size — the explicit ask this round is a single guaranteed page for 1 to 7
+shipments, this app's own hard group-size range, with no letterhead reserve, and A3's extra room
+makes that reliable rather than tight; the Bengali-specific content structure — 6-column Section E,
+single-table Section C, numbered Section H, all confirmed against the real Bengali reference PDF in
+batch 10 — is unchanged, just rendered on the larger canvas). Stamp Application: plain LEGAL size
+(215.9×355.6mm), not A4. Neither document draws the letterhead at all any more.
+
+**Signature/stamp block removed entirely from Packing List, Buyer's Invoice, BD Invoice** — a
+physical company stamp is added by hand afterward now, which is exactly what the drawn "line +
+Proprietor + company name" used to stand in for. Removed from all 4 places it existed: the PDF
+generator (`drawSignature` + both call sites), DOCX, XLSX, and — found while making this
+consistent — the separate HTML print view's own `SignatureBlock`, which still had it. While in the
+print view: also found and fixed the same stale "coded banner fallback + banner-shape-only
+restriction" in its own header component that batch 10 had already fixed in the PDF path, so Print
+and Download match again (this round's own wording, "printed or downloaded", made the mismatch worth
+fixing rather than leaving as before).
+
+**A real rendering bug found and fixed while correcting the Stamp Application's Bengali salutation
+text**: `wrapBengaliText` treated an embedded `\n` as just more whitespace and word-wrapped straight
+over it, silently discarding forced line breaks — a short multi-line block like a letter's opening
+address (several deliberately separate short lines) would get re-flowed into one run-on line. Fixed
+at the source (splits on `\n` first, wraps each resulting line independently), which benefits any
+other Bengali paragraph text with an embedded line break, not just this one block. The salutation
+block itself was also replaced with the exact fixed text provided, for Bengali specifically.
+
+**"(In Foreign Currency)" bracket style** — batch 10's spelled-out "...in Foreign Currency" wording
+(itself a fix for the original "(FC)" abbreviation) is now bracketed to match the real reference
+forms' own convention (e.g. "ইনভয়েসের মূল্য (বৈদেশিক মুদ্রায়)"), across the PDF, DOCX, and XLSX
+generators. The one structurally different string ("Payable Incentive Amount (in Taka: ...)", which
+describes a calculation formula rather than labeling a value's currency) was correctly left alone.
+
+**Section E's missing EXP year, root-caused rather than patched around**: `expDate` was a real
+`ExportShipment` schema field, but had no input anywhere in the shipment editor to ever actually set
+it — only "EXP No." had a field. Added the missing "EXP Date" input (same date-input pattern already
+used for Shipment Date), AND added a fallback in the Ka Form's own data assembly that derives the
+year from the shipment's own always-populated `date` field when `expDate` isn't set, so
+already-saved shipments show a correct year immediately too, not only ones saved going forward.
+
+**Vercel deployment audit** — systematic sweep (filesystem writes, middleware Edge-runtime
+compatibility, env var handling, NextAuth config, image domains) came back clean; found and fixed 3
+concrete things: (1) a cron endpoint for currency-rate/inventory updates existed and checked its own
+secret correctly but was never actually scheduled — added `vercel.json`, deliberately once/day since
+Vercel's Hobby plan hard-rejects (fails the whole deploy) any more frequent schedule, confirmed via
+research rather than assumed; (2) pinned `"engines": {"node": "22.x"}` in `package.json` — Vercel is
+deprecating Node 20 for new deployments on Oct 1 2026, and nothing was pinning this project away from
+that as Vercel's own shifting default changes; (3) the significant one — confirmed via research that
+Vercel Serverless Functions hard-cap request bodies at 4.5MB, non-configurable, and `/api/upload`
+takes images as base64 JSON. A prior round had already correctly identified and solved exactly this
+(`lib/clientImageResize.js`) but only wired it into 3 of 11 actual upload points across the app;
+wired in the other 8 (export categories/licenses, the main and per-license letterhead uploads, the
+shipment editor's letterhead/photo/document uploaders, products, banners), sized per use case, with
+the 2 mixed PDF-or-image uploaders handling each file type appropriately (images resized, PDFs passed
+through as before — resizing a PDF client-side isn't a small addition, flagged as a smaller remaining
+gap rather than solved). Confirmed zero unresized image upload call sites remain anywhere in the app.
+
+## 20. Setup Reminder
 
 ```bash
 npm install

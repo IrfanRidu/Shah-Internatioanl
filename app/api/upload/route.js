@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { uploadImage } from '@/lib/cloudinary';
 
 // Folders that require admin access
-const ADMIN_ONLY_FOLDERS = ['products', 'banners', 'branding', 'letterheads', 'shipment-docs'];
+const ADMIN_ONLY_FOLDERS = ['products', 'banners', 'branding', 'letterheads', 'shipment-docs', 'incentive-applications'];
 
 export async function POST(request) {
   try {

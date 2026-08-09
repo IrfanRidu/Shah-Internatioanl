@@ -18,6 +18,14 @@ const ExportLicenseSchema = new mongoose.Schema({
   // Batch 7 (R1) — optional: not every license has a REX/GSP registration number. When set, it
   // auto-fills a shipment's rexNo the same way tinNo/binNo do above.
   rexNo: String,
+  // Batch 8 (R4) — the license-holder's own registration/contact details, entered once per license
+  // in License Settings. Not auto-filled anywhere (unlike tinNo/binNo/rexNo above, which flow onto
+  // a shipment) — these describe the license/company itself, not something a shipment reproduces.
+  ercNumber: String,   // Export Registration Certificate Number
+  address: String,
+  ownerName: String,
+  phone: String,
+  email: String,
   isActive: { type: Boolean, default: true },
   displayOrder: { type: Number, default: 0 },
 }, { timestamps: true });

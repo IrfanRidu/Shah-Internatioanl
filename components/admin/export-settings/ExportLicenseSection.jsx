@@ -6,8 +6,9 @@ import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
+import { resizeImageFile } from '@/lib/clientImageResize';
 
-const EMPTY = { licenseType: '', licenseName: '', licenseNo: '', activationDate: '', expiryDate: '', letterheadUrl: '', tinNo: '', binNo: '', rexNo: '' };
+const EMPTY = { licenseType: '', licenseName: '', licenseNo: '', activationDate: '', expiryDate: '', letterheadUrl: '', tinNo: '', binNo: '', rexNo: '', ercNumber: '', address: '', ownerName: '', phone: '', email: '' };
 const toDateInput = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
 export default function ExportLicenseSection({ categories }) {
@@ -36,6 +37,7 @@ export default function ExportLicenseSection({ categories }) {
       licenseType: l.licenseType?._id || l.licenseType || '', licenseName: l.licenseName, licenseNo: l.licenseNo || '',
       activationDate: toDateInput(l.activationDate), expiryDate: toDateInput(l.expiryDate),
       letterheadUrl: l.letterheadUrl || '', tinNo: l.tinNo || '', binNo: l.binNo || '', rexNo: l.rexNo || '',
+      ercNumber: l.ercNumber || '', address: l.address || '', ownerName: l.ownerName || '', phone: l.phone || '', email: l.email || '',
     });
     setModal(true);
   };
@@ -43,14 +45,15 @@ export default function ExportLicenseSection({ categories }) {
   const handleUpload = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: reader.result, folder: 'export-licenses' }) });
-      const data = await res.json();
-      if (data.success) set('letterheadUrl', data.url); else toast.error('Upload failed');
-      setUploading(false);
-    };
-    reader.readAsDataURL(file);
+    // This is a per-license letterhead — same "used as the actual PDF page background" role as the
+    // global one in Website Settings, so it gets the same generous resolution ceiling (still
+    // resized client-side first — see resizeImageFile's own comment on why that matters on Vercel).
+    resizeImageFile(file, { maxDimension: 2000, quality: 0.88 }).then((dataUrl) => {
+      fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'export-licenses' }) })
+        .then((res) => res.json())
+        .then((data) => { if (data.success) set('letterheadUrl', data.url); else toast.error(data.message || 'Upload failed'); })
+        .finally(() => setUploading(false));
+    }).catch((err) => { toast.error(err.message || 'Upload failed'); setUploading(false); });
   };
 
   const handleSave = async () => {
@@ -64,6 +67,7 @@ export default function ExportLicenseSection({ categories }) {
       licenseType: form.licenseType || undefined, licenseName: form.licenseName, licenseNo: form.licenseNo,
       activationDate: form.activationDate || undefined, expiryDate: form.expiryDate,
       letterheadUrl: form.letterheadUrl, tinNo: form.tinNo, binNo: form.binNo, rexNo: form.rexNo,
+      ercNumber: form.ercNumber, address: form.address, ownerName: form.ownerName, phone: form.phone, email: form.email,
     }) });
     const d = await r.json();
     setSaving(false);
@@ -111,11 +115,13 @@ export default function ExportLicenseSection({ categories }) {
               <h3 className="font-bold text-gray-900 dark:text-white">{l.licenseName}</h3>
               {l.licenseType?.name && <p className="text-xs text-gray-400">{l.licenseType.name}</p>}
               {l.licenseNo && <p className="text-xs text-gray-400">No: {l.licenseNo}</p>}
-              <div className="flex gap-3 mt-2 text-xs text-gray-500">
+              <div className="flex gap-3 mt-2 text-xs text-gray-500 flex-wrap">
                 <span>TIN: {l.tinNo}</span>
                 <span>BIN: {l.binNo}</span>
                 {l.rexNo && <span>REX: {l.rexNo}</span>}
+                {l.ercNumber && <span>ERC: {l.ercNumber}</span>}
               </div>
+              {l.ownerName && <p className="text-xs text-gray-400 mt-1">{l.ownerName}</p>}
               {l.expiryDate && (
                 <p className={`text-xs mt-1.5 font-medium ${isExpired(l) ? 'text-red-500' : 'text-gray-400'}`}>
                   {isExpired(l) ? '⚠️ Expired' : 'Expires'} {new Date(l.expiryDate).toLocaleDateString()}
@@ -150,6 +156,20 @@ export default function ExportLicenseSection({ categories }) {
             <Input label="BIN" required value={form.binNo} onChange={e => set('binNo', e.target.value)} />
           </div>
           <Input label="REX No" value={form.rexNo} onChange={e => set('rexNo', e.target.value)} hint="Optional — auto-fills a shipment's REX No, used in the Buyer's Invoice declaration" />
+          <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">License Holder Details</p>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="ERC Number" value={form.ercNumber} onChange={e => set('ercNumber', e.target.value)} hint="Export Registration Certificate Number" />
+                <Input label="Owner Name" value={form.ownerName} onChange={e => set('ownerName', e.target.value)} />
+              </div>
+              <Input label="Address" value={form.address} onChange={e => set('address', e.target.value)} />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Phone" value={form.phone} onChange={e => set('phone', e.target.value)} />
+                <Input label="Email" type="email" value={form.email} onChange={e => set('email', e.target.value)} />
+              </div>
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">License Letterhead <span className="text-red-500">*</span></label>
             <div className="flex items-center gap-3">

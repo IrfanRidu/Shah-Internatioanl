@@ -8,6 +8,7 @@ import Badge from '@/components/ui/Badge';
 import Loader from '@/components/ui/Loader';
 import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { resizeImageFile } from '@/lib/clientImageResize';
 
 const EMPTY = { title: '', subtitle: '', description: '', image: '', link: '', buttonText: '', type: 'hero', position: 'home', isActive: true, targetAudience: 'all', displayOrder: 0 };
 
@@ -30,14 +31,18 @@ export default function AdminBannersPage() {
   const handleImg = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: reader.result, folder: 'banners' }) });
+    try {
+      // Banners are wide hero images, so a larger ceiling than a typical thumbnail — still resized
+      // client-side first, see resizeImageFile's own comment on why that matters on Vercel.
+      const dataUrl = await resizeImageFile(file, { maxDimension: 1920, quality: 0.85 });
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'banners' }) });
       const d = await res.json();
-      if (d.success) set('image', d.url); else toast.error('Upload failed');
+      if (d.success) set('image', d.url); else toast.error(d.message || 'Upload failed');
+    } catch (err) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
       setUploading(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleSave = async () => {

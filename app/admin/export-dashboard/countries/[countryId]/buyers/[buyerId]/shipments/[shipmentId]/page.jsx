@@ -2,21 +2,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2, Printer, FileText, Upload, Save, Package, ReceiptText, Globe, MoreHorizontal, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Printer, FileText, Upload, Save, Package, ReceiptText, Globe, MoreHorizontal, RefreshCw, Lock, Landmark, Tag, Edit3, RotateCcw, FileSignature } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Badge from '@/components/ui/Badge';
+import Modal from '@/components/ui/Modal';
 import Loader from '@/components/ui/Loader';
 import ProductNameCombobox from '@/components/admin/ProductNameCombobox';
-import { generateShipmentDocPDF, docTypeLabel } from '@/lib/exportDocuments';
+import { generateShipmentDocPDF, generateShipmentDocDOCX, generateShipmentDocXLSX, docTypeLabel, DEFAULT_DOCUMENT_TEXT } from '@/lib/exportDocuments';
 import { calculateShipmentFinancials } from '@/lib/utils';
+import { resolveEffectiveRateBDT, isRateOverrideActive } from '@/lib/incentiveUtils';
 import { AVAILABLE_COLUMNS, COLUMN_LABELS, DOC_LABELS, columnHeaderLabel, getDocumentColumns, shouldShowBdHsCode, avgPrice, shipmentAveragePrice } from '@/lib/exportColumns';
 import toast from 'react-hot-toast';
+import { resizeImageFile } from '@/lib/clientImageResize';
 
 // Print vs Download are now genuinely separate actions (issue 35): Print opens the isolated print
 // route and triggers the browser's print dialog; Download generates a real PDF file client-side and
 // saves it directly — no dialog, and (since it's built from data, not a DOM screenshot) never any
 // website UI. Both share one Letterhead/Plain A4 style toggle so admins don't have to pick twice.
-function DocActionBar({ baseDocType, docStyle, setDocStyle, onPrint, onDownload, downloadingDoc }) {
+function DocActionBar({ baseDocType, docStyle, setDocStyle, onPrint, onDownload, onEditText, downloadingDoc, downloadFormat, setDownloadFormat, locked }) {
   const isDownloading = downloadingDoc === baseDocType;
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -35,9 +39,24 @@ function DocActionBar({ baseDocType, docStyle, setDocStyle, onPrint, onDownload,
       <button onClick={() => onPrint(baseDocType)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
         <Printer className="w-3.5 h-3.5" /> Print
       </button>
+      {/* R5: PDF/DOCX/XLSX — one shared format choice across all 3 document bars, same pattern as
+          the Letterhead/Plain A4 toggle above. */}
+      <select value={downloadFormat} onChange={e => setDownloadFormat(e.target.value)} className="input-field py-1.5 text-xs w-auto" title="Download format">
+        <option value="pdf">PDF</option>
+        <option value="docx">DOCX</option>
+        <option value="xlsx">XLSX</option>
+      </select>
       <button onClick={() => onDownload(baseDocType)} disabled={isDownloading} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-all disabled:opacity-60">
         <FileText className="w-3.5 h-3.5" /> {isDownloading ? 'Preparing…' : 'Download'}
       </button>
+      {/* R5: lets the admin edit the hardcoded declaration/signatory text for this specific
+          document before generating it. Hidden once locked (R13) — a claimed shipment is
+          unavailable for any kind of change, including this. */}
+      {!locked && (
+        <button onClick={() => onEditText(baseDocType)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
+          <Edit3 className="w-3.5 h-3.5" /> Edit Text
+        </button>
+      )}
     </div>
   );
 }
@@ -454,7 +473,14 @@ export default function ShipmentDetailPage() {
   const [exporterInfo, setExporterInfo] = useState({ exporterName: 'Shah International', exporterAddress: '' });
   const [uploadingLH, setUploadingLH] = useState(false);
   const [docStyle, setDocStyle] = useState('letterhead'); // 'letterhead' | 'plain' — shared by Print & Download, all 3 doc types
-  const [downloadingDoc, setDownloadingDoc] = useState(null); // which baseDocType is currently generating a PDF, or null
+  const [downloadingDoc, setDownloadingDoc] = useState(null); // which baseDocType is currently generating a document, or null
+  // Batch 8 (R5): PDF/DOCX/XLSX — one shared format choice across all 3 doc types, same pattern as docStyle above.
+  const [downloadFormat, setDownloadFormat] = useState('pdf');
+  // Which baseDocType's hardcoded text is currently being edited (null = modal closed), and a local
+  // draft of {declaration, signatoryTitle} for it while the modal is open.
+  const [editingDocType, setEditingDocType] = useState(null);
+  const [textDraft, setTextDraft] = useState({ declaration: '', signatoryTitle: '' });
+  const [savingText, setSavingText] = useState(false);
 
   // Settings-driven config, fetched once on mount (see loadConfig below) — CTN Configuration
   // (requirement 2/3/4), Bank Accounts (6), Export Licenses (7), Export Categories (8/10), and the
@@ -463,11 +489,20 @@ export default function ShipmentDetailPage() {
   const [bankAccounts, setBankAccounts] = useState([]);
   const [exportLicenses, setExportLicenses] = useState([]);
   const [exportCategories, setExportCategories] = useState([]);
+  // Batch 9 (R18): this buyer's Export Contracts, for the new banner-card selector below.
+  const [exportContracts, setExportContracts] = useState([]);
+  // Reads ?contract=X the same way settings/page.jsx already established for this codebase — plain
+  // URLSearchParams against window.location, not next/navigation's useSearchParams, which would
+  // require wrapping this whole page in a Suspense boundary just for one param.
+  const [contractParam, setContractParam] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined') setContractParam(new URLSearchParams(window.location.search).get('contract') || '');
+  }, []);
   const [shipmentOptions, setShipmentOptions] = useState({ modeOfCarrying: [], landingPort: [], portOfDischarge: [], finalDestination: [], salesTerm: [], countryOfOrigin: [] });
 
   const [form, setFormState] = useState({
     shipmentNo: `SI-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
-    contractNo: '', invoiceNo: '', dateStr: new Date().toISOString().slice(0, 10),
+    contractNo: '', exportContract: '', invoiceNo: '', dateStr: new Date().toISOString().slice(0, 10),
     baseCurrency: 'EUR',
     exportCategory: '', // requirement 10
     modeOfCarrying: 'By Air',
@@ -475,7 +510,7 @@ export default function ShipmentDetailPage() {
     portOfDischarge: '', finalDestination: '', salesTerm: 'CFR',
     countryOfOrigin: 'Bangladesh',
     tinNo: '518591244958', binNo: '71367570202', ercNo: '260326210852625',
-    expNo: '', awbNo: '', pcNo: '', rexNo: '', // R1: REX No, auto-fills from the License below
+    expNo: '', expDateStr: '', awbNo: '', pcNo: '', rexNo: '', // R1: REX No, auto-fills from the License below
     exportLicense: '', // requirement 7
     bankAccount: '', // requirement 6
     beneficiaryBank: 'Sonali Bank', accountNo: '1608902003846',
@@ -499,9 +534,20 @@ export default function ShipmentDetailPage() {
     totalCost: '', receiveAmountBDT: '', orderValueForeign: '',
     orderCurrency: 'EUR', exchangeRateBDT: '',
     availableBalance: '', incentive: '', damage: '', netProfit: '',
-    notes: '', status: 'active', additionalDocs: [], photos: [],
+    // Batch 8 (R7): TT Configuration entries — {ttNumber, ttDate, ttValue}.
+    ttEntries: [],
+    // Batch 8 (R5): per-document text overrides, empty until the admin edits one.
+    documentTextOverrides: { packingList: {}, buyerInvoice: {}, bdInvoice: {} },
+    // Batch 8 (R2): a brand new shipment starts life as a draft — see handleSave below for how
+    // "Save Draft" vs "Save & Activate" set this explicitly rather than trusting whatever's here.
+    notes: '', status: 'draft', additionalDocs: [], photos: [],
   });
   const set = (k, v) => setFormState(p => ({ ...p, [k]: v }));
+
+  // Batch 8 (R13/R15): populated only when this shipment belongs to an Incentive Application —
+  // read-only reference data (never sent back in a save payload) used to show the lock banner and
+  // resolve the effective BDT rate. Stays null for a shipment that was never selected into one.
+  const [incentiveApplication, setIncentiveApplication] = useState(null);
 
   // Requirement 10: selecting a category computes this shipment's incentive ONCE, from the
   // category's own rates against the order value known right now — same "auto-fill then stays a
@@ -513,7 +559,9 @@ export default function ShipmentDetailPage() {
   const handleCategorySelect = (id) => {
     const cat = exportCategories.find(c => c._id === id);
     if (!cat) { set('exportCategory', id); return; }
-    const receiveBDT = (Number(form.orderValueForeign) || 0) * (Number(form.exchangeRateBDT) || 0);
+    // Batch 8 (R8): Order Value is now always itemsTotalValue, not a separately-typed field, so the
+    // estimate here uses that directly rather than the no-longer-authoritative form.orderValueForeign.
+    const receiveBDT = itemsTotalValue * (Number(form.exchangeRateBDT) || 0);
     const netIncentive = Math.max(0,
       receiveBDT * ((Number(cat.incentivePercentage) || 0) / 100) * (1 - (Number(cat.taxPercentage) || 0) / 100)
       - (Number(cat.incentiveApplicationCost) || 0) - (Number(cat.othersCost) || 0)
@@ -541,6 +589,20 @@ export default function ShipmentDetailPage() {
     setFormState(p => ({ ...p, exportLicense: id, tinNo: lic.tinNo, binNo: lic.binNo, rexNo: lic.rexNo || p.rexNo }));
   };
 
+  // Batch 9 (R18): auto-fills Contract No / Base Currency / Export Category from the selected
+  // Export Contract — identical "auto-fill once, stays a normal editable field" pattern as the 3
+  // handlers above.
+  const handleContractSelect = (id) => {
+    const contract = exportContracts.find(c => c._id === id);
+    if (!contract) { set('exportContract', id); return; }
+    setFormState(p => ({
+      ...p, exportContract: id,
+      contractNo: contract.contractNo || p.contractNo,
+      baseCurrency: contract.baseCurrency || p.baseCurrency,
+      exportCategory: contract.exportCategory?._id || contract.exportCategory || p.exportCategory,
+    }));
+  };
+
   const { rate, bdtPerUnit, loading: rateLoading, refresh: refreshRate } = useLiveRate(form.baseCurrency);
 
   useEffect(() => {
@@ -562,6 +624,8 @@ export default function ShipmentDetailPage() {
     fetch('/api/export/bank-accounts').then(r => r.json()).then(d => setBankAccounts((d.items || []).filter(b => b.isActive))).catch(() => {});
     fetch('/api/export/licenses').then(r => r.json()).then(d => setExportLicenses((d.items || []).filter(l => l.isActive))).catch(() => {});
     fetch('/api/export/categories').then(r => r.json()).then(d => setExportCategories((d.items || []).filter(c => c.isActive))).catch(() => {});
+    // Batch 9 (R18): this buyer's Export Contracts, for the new banner-card selector.
+    fetch(`/api/export/contracts?buyer=${buyerId}`).then(r => r.json()).then(d => setExportContracts(d.contracts || [])).catch(() => {});
     if (!isNew) {
       setLoading(true);
       fetch(`/api/export/shipments/${shipmentId}`).then(r => r.json()).then(d => {
@@ -570,6 +634,7 @@ export default function ShipmentDetailPage() {
           setFormState(p => ({
             ...p, ...s,
             dateStr: s.date ? new Date(s.date).toISOString().slice(0, 10) : '',
+            expDateStr: s.expDate ? new Date(s.expDate).toISOString().slice(0, 10) : '',
             items: s.items?.length ? s.items : EMPTY(),
             // Batch 7: no forced EMPTY() fallback here — a genuinely empty array lets the
             // auto-seed effect (below, after liveTotalCTN etc. are computed) know it's safe to
@@ -577,11 +642,15 @@ export default function ShipmentDetailPage() {
             // before this batch are left exactly as saved.
             bdItems: s.bdItems || [],
             photos: s.photos || [],
+            ttEntries: s.ttEntries || [],
+            documentTextOverrides: { packingList: {}, buyerInvoice: {}, bdInvoice: {}, ...(s.documentTextOverrides || {}) },
             // exportCategory/bankAccount/exportLicense come back POPULATED (full docs, for
             // convenience elsewhere) — these 3 selects need just the id as their value.
             exportCategory: s.exportCategory?._id || s.exportCategory || '',
             bankAccount: s.bankAccount?._id || s.bankAccount || '',
             exportLicense: s.exportLicense?._id || s.exportLicense || '',
+            // Batch 9 (R18): same "populated doc back, select needs just the id" handling.
+            exportContract: s.exportContract?._id || s.exportContract || '',
             // Requirement 4: a shipment saved before this feature existed has
             // grossWeightOverridden left at its schema default (false) with a totalGrossWeightKg
             // an admin may have carefully set by hand — without this, the very first time such a
@@ -591,21 +660,52 @@ export default function ShipmentDetailPage() {
             // otherwise.
             grossWeightOverridden: s.grossWeightOverridden === true || !!s.totalGrossWeightKg,
           }));
+          setIncentiveApplication(s.incentiveApplication || null);
         }
         setLoading(false);
       });
     }
   }, [shipmentId, buyerId, isNew]);
 
-  const handleSave = async () => {
+  // Batch 9 (R18): arriving here from a contract's shipment list with ?contract=X pre-associates a
+  // brand-new shipment with that contract, same as picking it from the selector manually would.
+  // Runs once, as soon as both the query param and the contracts list are available; a no-op for
+  // an existing shipment (isNew false) or once exportContract is already set from either source.
+  useEffect(() => {
+    if (!isNew || !contractParam || form.exportContract || exportContracts.length === 0) return;
+    handleContractSelect(contractParam);
+  }, [isNew, contractParam, exportContracts]);
+
+  // Batch 8 (R2/R3): `activate` distinguishes the two save actions in the header/footer —
+  // "Save Draft" (activate=false, only shown while still draft) leaves status exactly as-is, vs
+  // "Save" / "Save & Activate" (activate=true) which moves a draft shipment to active. Once a
+  // shipment is already active/completed/archived, activate=true is simply a no-op on status (it's
+  // already "activated" in spirit) — this is also independently enforced server-side (a PUT can
+  // never regress status back to draft), so this client logic is UX, not the only safeguard.
+  const handleSave = async (activate) => {
+    // R13: belt-and-braces — the Save button is hidden/disabled once locked, but a stale render
+    // (e.g. a claim happening in another tab) shouldn't be able to slip a request through.
+    if (incentiveApplication?.status === 'claimed') {
+      toast.error(`This shipment is locked — it's part of the claimed Incentive Application "${incentiveApplication.title}".`);
+      return;
+    }
     setSaving(true);
     // Auto-fill totals from the master products table (Shipment Details tab)
     const totalCTN = form.items.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0);
     const totalNetWeightKg = form.items.reduce((a, r) => a + (Number(r.quantityKg) || 0), 0);
+    // R8: Order Value is no longer a free-typed input — it's always exactly the Packing List /
+    // Shipment Details items total, in the shipment's own base currency (itemsTotalValue is defined
+    // further down this component, but by the time this closure actually runs — on a later click,
+    // never during render itself — it already holds the current render's computed total).
+    const orderValueForeign = itemsTotalValue;
+    const nextStatus = activate ? (form.status === 'draft' ? 'active' : form.status) : form.status;
     const payload = {
       ...form,
+      status: nextStatus,
+      orderValueForeign,
       buyer: buyerId, country: countryId,
       date: form.dateStr ? new Date(form.dateStr) : new Date(),
+      expDate: form.expDateStr ? new Date(form.expDateStr) : null,
       // Issue 43: Net Weight and Total Carton are auto-completed from the master products table —
       // the freshly-computed total always wins over whatever (now-unused) manual value might be
       // sitting in form state from an older save, rather than the old "prefer manual" priority.
@@ -632,7 +732,8 @@ export default function ShipmentDetailPage() {
     const d = await r.json();
     setSaving(false);
     if (d.success) {
-      toast.success('Shipment saved!');
+      setFormState(p => ({ ...p, status: d.shipment?.status || nextStatus, orderValueForeign }));
+      toast.success(nextStatus === 'draft' ? 'Saved as draft' : (form.status === 'draft' ? 'Shipment activated!' : 'Shipment saved!'));
       if (isNew) router.push(`/admin/export-dashboard/countries/${countryId}/buyers/${buyerId}/shipments/${d.shipment._id}`);
     } else toast.error(d.message);
   };
@@ -640,9 +741,11 @@ export default function ShipmentDetailPage() {
   const handleLetterheadUpload = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setUploadingLH(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: reader.result, folder: 'letterheads' }) });
+    try {
+      // High-resolution ceiling (used as the actual PDF page background — see lib/pdfLetterhead.js)
+      // — still resized client-side first, see resizeImageFile's own comment on why that matters.
+      const dataUrl = await resizeImageFile(file, { maxDimension: 2000, quality: 0.88 });
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'letterheads' }) });
       const data = await res.json();
       if (data.success) {
         // Save GLOBALLY — this is the one company letterhead, reused for every shipment until
@@ -655,10 +758,12 @@ export default function ShipmentDetailPage() {
         } else {
           toast.error('Uploaded, but failed to save as the company letterhead');
         }
-      } else toast.error('Upload failed');
+      } else toast.error(data.message || 'Upload failed');
+    } catch (err) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
       setUploadingLH(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handlePrint = (baseDocType) => {
@@ -668,9 +773,10 @@ export default function ShipmentDetailPage() {
     window.open(`/print/export/${shipmentId}?${qs}`, '_blank', 'width=900,height=700,scrollbars=yes');
   };
 
-  // Genuinely separate from Print: builds a real PDF client-side via jsPDF and saves it directly —
-  // no print dialog, no popup window, and (since it's built from data rather than a screenshot of the
-  // page) no possibility of website UI ending up in the file.
+  // Genuinely separate from Print: builds a real document client-side (PDF via jsPDF, DOCX via the
+  // docx package, XLSX via SheetJS — R5) and saves it directly — no print dialog, no popup window,
+  // and (since it's built from data rather than a screenshot of the page) no possibility of website
+  // UI ending up in the file.
   const handleDownload = async (baseDocType) => {
     if (isNew) { toast.error('Save the shipment first'); return; }
     setDownloadingDoc(baseDocType);
@@ -683,12 +789,59 @@ export default function ShipmentDetailPage() {
       // fetch) takes priority over the global company one, falling back to it if no license is
       // selected or the license somehow has none.
       const effectiveLetterheadUrl = d.shipment.exportLicense?.letterheadUrl || letterheadUrl;
-      const pdf = await generateShipmentDocPDF({ docType, shipment: d.shipment, buyer: d.shipment.buyer, letterheadUrl: effectiveLetterheadUrl, exporterInfo });
-      pdf.save(`${docTypeLabel(baseDocType).replace(/\s+/g, '-')}-${d.shipment.shipmentNo || shipmentId}.pdf`);
+      const baseFilename = `${docTypeLabel(baseDocType).replace(/\s+/g, '-')}-${d.shipment.shipmentNo || shipmentId}`;
+      if (downloadFormat === 'docx') {
+        await generateShipmentDocDOCX({ docType, shipment: d.shipment, buyer: d.shipment.buyer, exporterInfo, filename: `${baseFilename}.docx` });
+      } else if (downloadFormat === 'xlsx') {
+        generateShipmentDocXLSX({ docType, shipment: d.shipment, buyer: d.shipment.buyer, exporterInfo, filename: `${baseFilename}.xlsx` });
+      } else {
+        const pdf = await generateShipmentDocPDF({ docType, shipment: d.shipment, buyer: d.shipment.buyer, letterheadUrl: effectiveLetterheadUrl, exporterInfo });
+        pdf.save(`${baseFilename}.pdf`);
+      }
     } catch {
-      toast.error('Could not generate the PDF — try Print instead');
+      toast.error('Could not generate the document — try Print instead');
     } finally {
       setDownloadingDoc(null);
+    }
+  };
+
+  // Batch 8 (R5): baseDocType ('packing' | 'buyer-invoice' | 'bd-invoice') → the key used in
+  // documentTextOverrides / DEFAULT_DOCUMENT_TEXT (camelCase, no hyphen).
+  const docTextKey = (baseDocType) => (baseDocType === 'packing' ? 'packingList' : baseDocType === 'buyer-invoice' ? 'buyerInvoice' : 'bdInvoice');
+
+  const openTextOverrideEditor = (baseDocType) => {
+    if (isNew) { toast.error('Save the shipment first'); return; }
+    const key = docTextKey(baseDocType);
+    const current = form.documentTextOverrides?.[key] || {};
+    const fallback = DEFAULT_DOCUMENT_TEXT[key];
+    setTextDraft({ declaration: current.declaration || fallback.declaration, signatoryTitle: current.signatoryTitle || fallback.signatoryTitle });
+    setEditingDocType(baseDocType);
+  };
+
+  // Persists immediately (rather than waiting for the main Save button) through the dedicated
+  // documentTextOverridesOnly path on the shipments PUT route — see that route for why a targeted
+  // $set is used here instead of resending the whole shipment. This also means Print (a separate
+  // browser tab that independently fetches its own data) and the next Download both see the change
+  // right away, without the admin needing to remember to hit the main Save first.
+  const handleSaveTextOverride = async () => {
+    const key = docTextKey(editingDocType);
+    setSavingText(true);
+    try {
+      const nextOverrides = { ...(form.documentTextOverrides || {}), [key]: { ...textDraft } };
+      const r = await fetch(`/api/export/shipments/${shipmentId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentTextOverridesOnly: true, documentTextOverrides: nextOverrides }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        set('documentTextOverrides', nextOverrides);
+        toast.success('Document text updated');
+        setEditingDocType(null);
+      } else toast.error(d.message || 'Could not save');
+    } catch {
+      toast.error('Could not save the text changes');
+    } finally {
+      setSavingText(false);
     }
   };
 
@@ -812,25 +965,38 @@ export default function ShipmentDetailPage() {
 
   const usdEquiv = rate ? (1 / rate).toFixed(4) : '...';
 
+  // Batch 8 (R15): while this shipment's Incentive Application has an active rate override (a
+  // manual rate, or — once claimed — the frozen one), that resolved number IS the rate everywhere
+  // below, replacing the shipment's own live-tracked exchangeRateBDT.
+  const rateOverrideActive = isRateOverrideActive(incentiveApplication);
+  const effectiveExchangeRateBDT = rateOverrideActive
+    ? resolveEffectiveRateBDT(form, incentiveApplication)
+    : (form.exchangeRateBDT || bdtPerUnit || 0);
+
   // Issue 46: live financial preview, computed with the SAME shared function the backend uses, so
   // what the admin sees while typing always matches what will actually be persisted on save.
+  // R8: orderValueForeign is always the Packing List / Shipment Details items total now, not a free
+  // input — and ttEntries feed in so the preview reflects the same TT-overrides-Order-Value rule
+  // the backend applies.
   const liveFinancials = calculateShipmentFinancials({
     initialBalance,
     freightCost: form.freightCost, goodsCost: form.goodsCost, exportProcessingCost: form.exportProcessingCost,
-    othersCost: form.othersCost, damage: form.damage, orderValueForeign: form.orderValueForeign,
-    exchangeRateBDT: form.exchangeRateBDT || bdtPerUnit || 0, incentive: form.incentive,
+    othersCost: form.othersCost, damage: form.damage, orderValueForeign: itemsTotalValue,
+    exchangeRateBDT: effectiveExchangeRateBDT, incentive: form.incentive, ttEntries: form.ttEntries,
   });
 
   const addPhoto = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: reader.result, folder: 'shipment-photos' }) });
+    try {
+      // Resized client-side first — see resizeImageFile's own comment on why that matters on Vercel.
+      const dataUrl = await resizeImageFile(file, { maxDimension: 1600, quality: 0.85 });
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'shipment-photos' }) });
       const data = await res.json();
       if (data.success) set('photos', [...(form.photos || []), { url: data.url, caption: '' }]);
-      else toast.error('Photo upload failed');
-    };
-    reader.readAsDataURL(file);
+      else toast.error(data.message || 'Photo upload failed');
+    } catch (err) {
+      toast.error(err.message || 'Photo upload failed');
+    }
   };
   const updatePhotoCaption = (i, caption) => {
     const next = [...(form.photos || [])];
@@ -839,86 +1005,162 @@ export default function ShipmentDetailPage() {
   };
   const removePhoto = (i) => set('photos', (form.photos || []).filter((_, idx) => idx !== i));
 
+  // Batch 8 (R7): TT Configuration entry helpers — same add/update/remove-row shape as the photo
+  // helpers just above.
+  const addTTEntry = () => set('ttEntries', [...(form.ttEntries || []), { ttNumber: '', ttDate: '', ttValue: '' }]);
+  const updateTTEntry = (i, field, value) => {
+    const next = [...(form.ttEntries || [])];
+    next[i] = { ...next[i], [field]: value };
+    set('ttEntries', next);
+  };
+  const removeTTEntry = (i) => set('ttEntries', (form.ttEntries || []).filter((_, idx) => idx !== i));
+  const ttEntriesTotal = (form.ttEntries || []).reduce((a, t) => a + (Number(t.ttValue) || 0), 0);
+
+  const locked = incentiveApplication?.status === 'claimed';
+  // R11/R18: Base Currency / Export Category / Export License / Export Contract specifically
+  // define the grouping an Incentive Application shares — restricted the moment this shipment
+  // belongs to ANY application (pending or claimed), matching the server-side guard in the
+  // shipments PUT route. Every other field stays governed by `locked` alone (only claimed fully
+  // locks the rest of the shipment).
+  const groupingLocked = locked || !!incentiveApplication;
+  const statusBadgeVariant = { draft: 'warning', active: 'info', completed: 'success', archived: 'default' }[form.status] || 'default';
+  const statusBadgeLabel = { draft: 'Draft', active: 'Active', completed: 'Completed', archived: 'Archived' }[form.status] || form.status;
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <button onClick={() => router.push(`/admin/export-dashboard/countries/${countryId}/buyers/${buyerId}`)}
+        <button onClick={() => router.push(form.exportContract ? `/admin/export-dashboard/countries/${countryId}/buyers/${buyerId}/contracts/${form.exportContract}` : `/admin/export-dashboard/countries/${countryId}/buyers/${buyerId}`)}
           className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-500" />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{isNew ? 'New Shipment' : form.shipmentNo}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">{isNew ? 'New Shipment' : form.shipmentNo}</h1>
+            {!isNew && <Badge variant={statusBadgeVariant}>{statusBadgeLabel}</Badge>}
+          </div>
           <p className="text-sm text-gray-500">{buyer?.name}</p>
         </div>
-        <Button onClick={handleSave} loading={saving} variant="primary" icon={Save}>Save</Button>
+        {/* R2/R3: while still draft, two explicit actions — Save Draft keeps it a draft (never
+            logged), Save & Activate is the one that flips it to active and starts the audit trail.
+            Once active/completed/archived, a single Save covers every later edit. Locked (R13)
+            shipments show no save action at all — see the banner below instead. */}
+        {locked ? null : form.status === 'draft' ? (
+          <div className="flex items-center gap-2">
+            <Button onClick={() => handleSave(false)} loading={saving} variant="secondary">Save Draft</Button>
+            <Button onClick={() => handleSave(true)} loading={saving} variant="primary" icon={Save}>Save &amp; Activate</Button>
+          </div>
+        ) : (
+          <Button onClick={() => handleSave(true)} loading={saving} variant="primary" icon={Save}>Save</Button>
+        )}
       </div>
 
-      {/* Base currency + live rate banner */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 mb-5 flex flex-wrap items-center gap-4">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-blue-800 dark:text-blue-300">Base Currency (set once — applies to entire shipment)</p>
-          <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
-            Live rate: 1 USD = <span className="font-bold">{rate ? rate.toFixed(4) : '...'} {form.baseCurrency}</span>
-            {form.baseCurrency !== 'BDT' && bdtPerUnit ? ` · BDT rate used in analytics: ৳${bdtPerUnit.toFixed(2)} ≈ 1 ${form.baseCurrency} (live)` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select value={form.baseCurrency} onChange={e => set('baseCurrency', e.target.value)} className="input-field py-2 text-sm font-bold w-auto">
-            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <button onClick={refreshRate} disabled={rateLoading} className="p-2 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-100 transition-all" title="Refresh live rate">
-            <RefreshCw className={`w-4 h-4 ${rateLoading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* Requirement 10 + batch 7: Export Category — drives this shipment's incentive calc, the
-          image shown on the buyer's shipment list, AND (batch 7) which columns appear on this
-          shipment's Packing List / Buyer's Invoice / BD Invoice — see /admin/export-dashboard/categories.
-          Positioned right after Base Currency, matching the sequence the requirements themselves
-          describe (currency → category → bank → license), and because it's now the dashboard's
-          central concept — picking it early shapes everything else on this page. */}
-      <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-2xl p-4 mb-5 flex flex-wrap items-center gap-4">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-purple-800 dark:text-purple-300">Export Category</p>
-          <p className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">Drives this shipment's incentive calculation, its shipment-list card image, and its Packing List / Buyer's Invoice / BD Invoice document format</p>
-        </div>
-        <div>
-          <select value={form.exportCategory} onChange={e => handleCategorySelect(e.target.value)} className="input-field py-2 text-sm font-bold w-auto min-w-[220px]">
-            <option value="">— Select Export Category —</option>
-            {exportCategories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
-          </select>
-          {exportCategories.length === 0 && (
-            <p className="text-xs text-amber-600 mt-1">
-              None yet — <Link href="/admin/export-dashboard/categories" className="underline font-semibold">add one here</Link>
+      {locked && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 mb-5 flex items-start gap-3">
+          <Lock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-800 dark:text-amber-300">Locked — claimed by an Incentive Application</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+              This shipment is part of <span className="font-semibold">"{incentiveApplication.title}"</span>, which has been marked as Incentive Claimed. It's read-only (including its BDT rate, now frozen) until that application is unclaimed.
             </p>
+            <Link href={`/admin/export-dashboard/incentives/${incentiveApplication._id}`} className="text-xs font-semibold text-amber-800 dark:text-amber-300 underline mt-1 inline-block">View the Incentive Application →</Link>
+          </div>
+        </div>
+      )}
+
+      {/* R11/R18: pending (not yet claimed) — everything else on the page stays editable, but
+          these 4 specific cards are disabled since they define the grouping the Incentive
+          Application shares (see the note on each disabled card, and the server-side guard in the
+          shipments PUT route). Only shown when NOT also fully locked — the amber banner above
+          already covers that. */}
+      {groupingLocked && !locked && (
+        <div className="bg-blue-50/60 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900 rounded-xl px-3 py-2 mb-3 text-xs text-blue-700 dark:text-blue-400">
+          Export Contract, Currency, Category &amp; License are locked while this shipment is part of{' '}
+          <Link href={`/admin/export-dashboard/incentives/${incentiveApplication._id}`} className="font-semibold underline">{incentiveApplication.title}</Link> — everything else below stays editable.
+        </div>
+      )}
+
+      {/* R1/R18: Export Contract / Base Currency / Export Category / Beneficiary Bank / Export
+          License — a compact grid of small cards (2-across on mobile, 3-across on tablet,
+          5-across on desktop), so picking all five costs a fraction of the vertical space 5
+          stacked full-width banners would. Export Contract leads since it's the new top-level
+          context (R18) that auto-fills Contract No / Currency / Category below it — same auto-
+          fill-then-editable pattern as the other 4 cards. */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 mb-5">
+        <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <FileSignature className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+            <p className="text-xs font-bold text-indigo-800 dark:text-indigo-300 truncate">Export Contract</p>
+          </div>
+          <select value={form.exportContract} onChange={e => handleContractSelect(e.target.value)} disabled={groupingLocked} className="input-field py-1.5 text-xs font-bold w-full disabled:opacity-60">
+            <option value="">— Select —</option>
+            {exportContracts.map(c => <option key={c._id} value={c._id}>{c.contractNo}</option>)}
+          </select>
+          {exportContracts.length === 0 ? (
+            <p className="text-[10px] text-amber-600 mt-1 leading-tight">None yet for this buyer — add one from its contracts page</p>
+          ) : (
+            <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-1 leading-tight">Auto-fills Contract No, Currency &amp; Category</p>
           )}
         </div>
-      </div>
 
-      {/* Requirement 6: Bank Account — auto-fills the 5 bank fields in the Shipment Details tab. */}
-      <div className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-2xl p-4 mb-5 flex flex-wrap items-center gap-4">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-cyan-800 dark:text-cyan-300">Beneficiary Bank</p>
-          <p className="text-xs text-cyan-600 dark:text-cyan-400 mt-0.5">Auto-fills Account No, Branch, Bank Address, Routing No &amp; SWIFT Code in the Shipment Details tab below — still editable there afterward</p>
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Globe className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+            <p className="text-xs font-bold text-blue-800 dark:text-blue-300 truncate">Base Currency</p>
+            <button onClick={refreshRate} disabled={rateLoading} className="ml-auto p-0.5 rounded text-blue-500 hover:bg-blue-100 transition-all flex-shrink-0" title="Refresh live rate">
+              <RefreshCw className={`w-3 h-3 ${rateLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <select value={form.baseCurrency} onChange={e => set('baseCurrency', e.target.value)} disabled={groupingLocked} className="input-field py-1.5 text-xs font-bold w-full disabled:opacity-60">
+            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <p className="text-[10px] text-blue-600 dark:text-blue-400 mt-1 leading-tight truncate" title={`1 USD = ${rate ? rate.toFixed(4) : '...'} ${form.baseCurrency}`}>
+            1 USD = {rate ? rate.toFixed(4) : '...'} {form.baseCurrency} · set once
+          </p>
         </div>
-        <select value={form.bankAccount} onChange={e => handleBankSelect(e.target.value)} className="input-field py-2 text-sm font-bold w-auto min-w-[220px]">
-          <option value="">— Select Bank Account —</option>
-          {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.beneficiaryBank}</option>)}
-        </select>
-      </div>
 
-      {/* Requirement 7: Export License — auto-fills TIN/BIN/REX No below and this shipment's
-          document letterhead (takes priority over the global company letterhead once selected). */}
-      <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-2xl p-4 mb-5 flex flex-wrap items-center gap-4">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-rose-800 dark:text-rose-300">Export License</p>
-          <p className="text-xs text-rose-600 dark:text-rose-400 mt-0.5">Auto-fills TIN, BIN &amp; REX No below, and becomes the letterhead used on this shipment's documents</p>
+        {/* Requirement 10 + batch 7: drives this shipment's incentive calc, its shipment-list card
+            image, AND which columns appear on Packing List / Buyer's Invoice / BD Invoice. */}
+        <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Tag className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+            <p className="text-xs font-bold text-purple-800 dark:text-purple-300 truncate">Export Category</p>
+          </div>
+          <select value={form.exportCategory} onChange={e => handleCategorySelect(e.target.value)} disabled={groupingLocked} className="input-field py-1.5 text-xs font-bold w-full disabled:opacity-60">
+            <option value="">— Select —</option>
+            {exportCategories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+          </select>
+          {exportCategories.length === 0 ? (
+            <p className="text-[10px] text-amber-600 mt-1 leading-tight">None yet — <Link href="/admin/export-dashboard/categories" className="underline font-semibold">add one</Link></p>
+          ) : (
+            <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-1 leading-tight">Drives incentive &amp; document format</p>
+          )}
         </div>
-        <select value={form.exportLicense} onChange={e => handleLicenseSelect(e.target.value)} className="input-field py-2 text-sm font-bold w-auto min-w-[220px]">
-          <option value="">— Select Export License —</option>
-          {exportLicenses.map(l => <option key={l._id} value={l._id}>{l.licenseName}</option>)}
-        </select>
+
+        {/* Requirement 6: auto-fills the 5 bank fields in the Shipment Details tab. */}
+        <div className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Landmark className="w-3.5 h-3.5 text-cyan-600 flex-shrink-0" />
+            <p className="text-xs font-bold text-cyan-800 dark:text-cyan-300 truncate">Beneficiary Bank</p>
+          </div>
+          <select value={form.bankAccount} onChange={e => handleBankSelect(e.target.value)} disabled={locked} className="input-field py-1.5 text-xs font-bold w-full disabled:opacity-60">
+            <option value="">— Select —</option>
+            {bankAccounts.map(b => <option key={b._id} value={b._id}>{b.beneficiaryBank}</option>)}
+          </select>
+          <p className="text-[10px] text-cyan-600 dark:text-cyan-400 mt-1 leading-tight">Auto-fills bank details below</p>
+        </div>
+
+        {/* Requirement 7: auto-fills TIN/BIN/REX No and this shipment's document letterhead. */}
+        <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <FileText className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+            <p className="text-xs font-bold text-rose-800 dark:text-rose-300 truncate">Export License</p>
+          </div>
+          <select value={form.exportLicense} onChange={e => handleLicenseSelect(e.target.value)} disabled={groupingLocked} className="input-field py-1.5 text-xs font-bold w-full disabled:opacity-60">
+            <option value="">— Select —</option>
+            {exportLicenses.map(l => <option key={l._id} value={l._id}>{l.licenseName}</option>)}
+          </select>
+          <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1 leading-tight">Auto-fills TIN/BIN/REX &amp; letterhead</p>
+        </div>
       </div>
 
       {/* Letterhead upload — a GLOBAL company setting (issue 39): upload once here, it's reused on
@@ -958,7 +1200,7 @@ export default function ShipmentDetailPage() {
                 <p className="text-xs text-gray-400 mt-0.5">Read-only — mirrors the products table in Shipment Details</p>
               </div>
               <div className="flex gap-2">
-                <DocActionBar baseDocType="packing" docStyle={docStyle} setDocStyle={setDocStyle} onPrint={handlePrint} onDownload={handleDownload} downloadingDoc={downloadingDoc} />
+                <DocActionBar baseDocType="packing" docStyle={docStyle} setDocStyle={setDocStyle} onPrint={handlePrint} onDownload={handleDownload} onEditText={openTextOverrideEditor} downloadingDoc={downloadingDoc} downloadFormat={downloadFormat} setDownloadFormat={setDownloadFormat} locked={locked} />
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
@@ -991,7 +1233,7 @@ export default function ShipmentDetailPage() {
                 <p className="text-xs text-gray-400 mt-0.5">Read-only — mirrors the products table in Shipment Details</p>
               </div>
               <div className="flex gap-2">
-                <DocActionBar baseDocType="buyer-invoice" docStyle={docStyle} setDocStyle={setDocStyle} onPrint={handlePrint} onDownload={handleDownload} downloadingDoc={downloadingDoc} />
+                <DocActionBar baseDocType="buyer-invoice" docStyle={docStyle} setDocStyle={setDocStyle} onPrint={handlePrint} onDownload={handleDownload} onEditText={openTextOverrideEditor} downloadingDoc={downloadingDoc} downloadFormat={downloadFormat} setDownloadFormat={setDownloadFormat} locked={locked} />
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
@@ -1026,7 +1268,7 @@ export default function ShipmentDetailPage() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <DocActionBar baseDocType="bd-invoice" docStyle={docStyle} setDocStyle={setDocStyle} onPrint={handlePrint} onDownload={handleDownload} downloadingDoc={downloadingDoc} />
+                <DocActionBar baseDocType="bd-invoice" docStyle={docStyle} setDocStyle={setDocStyle} onPrint={handlePrint} onDownload={handleDownload} onEditText={openTextOverrideEditor} downloadingDoc={downloadingDoc} downloadFormat={downloadFormat} setDownloadFormat={setDownloadFormat} locked={locked} />
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
@@ -1089,6 +1331,10 @@ export default function ShipmentDetailPage() {
                 <Input label="BIN" value={form.binNo} onChange={e => set('binNo', e.target.value)} />
                 <Input label="ERC" value={form.ercNo} onChange={e => set('ercNo', e.target.value)} />
                 <Input label="EXP No" value={form.expNo} onChange={e => set('expNo', e.target.value)} />
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">EXP Date</label>
+                  <input type="date" value={form.expDateStr} onChange={e => set('expDateStr', e.target.value)} className="input-field py-2 text-sm" />
+                </div>
                 <Input label="AWB No" value={form.awbNo} onChange={e => set('awbNo', e.target.value)} />
                 <Input label="PC No" value={form.pcNo} onChange={e => set('pcNo', e.target.value)} />
                 <Input label="REX No" value={form.rexNo} onChange={e => set('rexNo', e.target.value)} hint="Used in the Buyer's Invoice declaration as BDREX + this number" />
@@ -1179,16 +1425,20 @@ export default function ShipmentDetailPage() {
             </div>
 
             <h3 className="font-bold text-gray-900 dark:text-white">Financial Details & Profit Analysis</h3>
-            <p className="text-xs text-gray-500 -mt-3">Enter the raw costs and order value below — Total Cost, Receive Amount, Available Balance, Shipment Margin, and Net Profit are all calculated automatically (issue 46) using the persisted Initial Balance ({initialBalance.toFixed(2)} BDT, set from the Export Analytics dashboard).</p>
+            <p className="text-xs text-gray-500 -mt-3">Enter the raw costs below — Order Value, Total Cost, Receive Amount, Available Balance, Shipment Margin, and Net Profit are all calculated automatically (issue 46) using the persisted Initial Balance ({initialBalance.toFixed(2)} BDT, set from the Export Analytics dashboard).</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Input label={`Freight Cost (${form.baseCurrency})`} type="number" min="0" value={form.freightCost} onChange={e => set('freightCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
-              <Input label="Goods Cost (BDT)" type="number" min="0" value={form.goodsCost} onChange={e => set('goodsCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
-              <Input label="Export Processing Cost (BDT)" type="number" min="0" value={form.exportProcessingCost} onChange={e => set('exportProcessingCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
-              <Input label="Others / Logistics / Labour (BDT)" type="number" min="0" value={form.othersCost} onChange={e => set('othersCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
-              <Input label="Damage (BDT)" type="number" min="0" value={form.damage} onChange={e => set('damage', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
-              <Input label={`Order Value (${form.baseCurrency})`} type="number" min="0" value={form.orderValueForeign} onChange={e => set('orderValueForeign', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
-              <Input label="Rate in BDT (live)" type="number" min="0" value={form.exchangeRateBDT || (bdtPerUnit ? bdtPerUnit.toFixed(2) : '')} onChange={e => set('exchangeRateBDT', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
-              <Input label="Incentive (BDT)" type="number" min="0" value={form.incentive} onChange={e => set('incentive', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
+              <Input label={`Freight Cost (${form.baseCurrency})`} type="number" min="0" disabled={locked} value={form.freightCost} onChange={e => set('freightCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
+              <Input label="Goods Cost (BDT)" type="number" min="0" disabled={locked} value={form.goodsCost} onChange={e => set('goodsCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
+              <Input label="Export Processing Cost (BDT)" type="number" min="0" disabled={locked} value={form.exportProcessingCost} onChange={e => set('exportProcessingCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
+              <Input label="Others / Logistics / Labour (BDT)" type="number" min="0" disabled={locked} value={form.othersCost} onChange={e => set('othersCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
+              <Input label="Damage (BDT)" type="number" min="0" disabled={locked} value={form.damage} onChange={e => set('damage', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
+              {/* R8: Order Value is no longer typed in — it's always exactly the Packing List /
+                  Shipment Details items total, in the shipment's base currency. Shown read-only,
+                  matching the "auto" fields further down, rather than as an editable Input. */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Order Value ({form.baseCurrency}) — auto</label>
+                <div className="input-field bg-gray-50 dark:bg-gray-800/60 font-semibold text-gray-700 dark:text-gray-200 flex items-center">{itemsTotalValue.toFixed(2)}</div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-xl bg-gray-50/70 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800">
@@ -1199,6 +1449,9 @@ export default function ShipmentDetailPage() {
               <div>
                 <p className="text-xs text-gray-500 mb-1">Receive Amount (BDT) — auto</p>
                 <p className="font-bold text-gray-900 dark:text-white">{liveFinancials.receiveAmountBDT.toFixed(2)}</p>
+                {/* R8: makes it visible at a glance whether Order Value or the TT total is currently
+                    driving this figure — same rule Export Analytics applies for this shipment. */}
+                <p className="text-[10px] text-gray-400 mt-0.5">{liveFinancials.usingTTForReceiveAmount ? 'from TT total' : 'from Order Value'}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">Available Balance (BDT) — auto</p>
@@ -1217,33 +1470,97 @@ export default function ShipmentDetailPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                <select value={form.status} onChange={e => set('status', e.target.value)} className="input-field text-sm">
-                  {['draft', 'active', 'completed', 'archived'].map(s => <option key={s} value={s} className="capitalize">{s}</option>)}
-                </select>
+            {/* R6/R7: TT Configuration — Rate in BDT (renamed from "Rate in BDT (live)") and
+                Incentive moved here from Financial Details above; plus every TT entry the admin
+                logs against this shipment (R8: their sum overrides Order Value for Receive Amount
+                the moment any entry has a value — see the note next to it above). */}
+            <div className="border border-gray-100 dark:border-gray-800 rounded-2xl p-4">
+              <h3 className="font-bold text-gray-900 dark:text-white">TT Configuration</h3>
+              <p className="text-xs text-gray-500 mt-0.5 mb-3">Rate in BDT and Incentive, plus every telegraphic transfer received against this shipment.</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <Input label="Rate in BDT" type="number" min="0" disabled={locked || rateOverrideActive}
+                    value={rateOverrideActive ? effectiveExchangeRateBDT.toFixed(2) : (form.exchangeRateBDT || (bdtPerUnit ? bdtPerUnit.toFixed(2) : ''))}
+                    onChange={e => set('exchangeRateBDT', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
+                  {rateOverrideActive && (
+                    <p className="text-[10px] text-amber-600 mt-1 leading-tight">
+                      Set by Incentive Application "{incentiveApplication.title}" — <Link href={`/admin/export-dashboard/incentives/${incentiveApplication._id}`} className="underline">edit there</Link>
+                    </p>
+                  )}
+                </div>
+                <Input label="Incentive (BDT)" type="number" min="0" disabled={locked} value={form.incentive} onChange={e => set('incentive', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} />
               </div>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Telegraphic Transfers (TT)</p>
+                  {!locked && <Button onClick={addTTEntry} variant="ghost" size="xs" icon={Plus}>Add TT</Button>}
+                </div>
+                {(form.ttEntries || []).length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No TT entries yet — Receive Amount (BDT) uses Order Value until at least one is added here.</p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 text-xs font-semibold text-gray-500 px-1">
+                      <span>TT Number</span><span>TT Date</span><span>TT Value ({form.baseCurrency})</span><span></span>
+                    </div>
+                    {form.ttEntries.map((t, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                        <input value={t.ttNumber || ''} disabled={locked} onChange={e => updateTTEntry(i, 'ttNumber', e.target.value)} className="input-field py-1.5 text-sm disabled:opacity-60" placeholder="TT No." />
+                        <input type="date" value={t.ttDate ? new Date(t.ttDate).toISOString().slice(0, 10) : ''} disabled={locked} onChange={e => updateTTEntry(i, 'ttDate', e.target.value)} className="input-field py-1.5 text-sm disabled:opacity-60" />
+                        <input type="number" min="0" value={t.ttValue ?? ''} disabled={locked} onChange={e => updateTTEntry(i, 'ttValue', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} className="input-field py-1.5 text-sm disabled:opacity-60" placeholder="0.00" />
+                        {!locked && <button onClick={() => removeTTEntry(i)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>}
+                      </div>
+                    ))}
+                    <div className="flex justify-end pt-2 border-t border-gray-100 dark:border-gray-800">
+                      <p className="text-sm font-bold text-gray-900 dark:text-white">Total TT: {ttEntriesTotal.toFixed(2)} {form.baseCurrency}<span className="text-xs font-normal text-green-600 ml-2">— now driving Receive Amount (BDT)</span></p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* R2/R3: draft→active happens only via the Save Draft / Save & Activate buttons in
+                  the header — this dropdown no longer offers 'draft' at all once a shipment has
+                  left it, so a shipment already being logged can never be quietly walked back into
+                  an unlogged state. Manually marking a shipment Completed/Archived outside the
+                  Incentive workflow is still supported, same as before this batch. */}
+              {form.status !== 'draft' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                  <select value={form.status} onChange={e => set('status', e.target.value)} disabled={locked} className="input-field text-sm disabled:opacity-60">
+                    {['active', 'completed', 'archived'].map(s => <option key={s} value={s} className="capitalize">{s}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Notes</label>
-              <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} className="input-field resize-none" />
+              <textarea rows={3} disabled={locked} value={form.notes} onChange={e => set('notes', e.target.value)} className="input-field resize-none disabled:opacity-60" />
             </div>
             {/* Additional document uploads */}
             <div>
               <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Additional Documents</p>
               <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-gray-300 cursor-pointer text-sm text-gray-500 hover:border-brand hover:text-brand transition-all w-fit">
                 <Upload className="w-4 h-4" /> Upload Document (PDF/Image)
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={async (e) => {
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => {
                   const file = e.target.files?.[0]; if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = async () => {
-                    const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: reader.result, folder: 'shipment-docs' }) });
+                  // resizeImageFile only applies to actual images (it rejects anything else) — a
+                  // PDF goes through as before, unresized; see its own comment for why images do.
+                  const toDataUrl = file.type?.startsWith('image/')
+                    ? resizeImageFile(file, { maxDimension: 1600, quality: 0.85 })
+                    : new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsDataURL(file);
+                      });
+                  toDataUrl.then(async (dataUrl) => {
+                    const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'shipment-docs' }) });
                     const data = await res.json();
                     if (data.success) { set('additionalDocs', [...(form.additionalDocs || []), { name: file.name, url: data.url }]); toast.success('Uploaded'); }
-                    else toast.error('Upload failed');
-                  };
-                  reader.readAsDataURL(file);
+                    else toast.error(data.message || 'Upload failed');
+                  }).catch((err) => toast.error(err.message || 'Upload failed'));
                 }} />
               </label>
               {(form.additionalDocs || []).map((doc, i) => (
@@ -1282,9 +1599,39 @@ export default function ShipmentDetailPage() {
         )}
       </div>
 
-      <div className="mt-4 flex justify-end">
-        <Button onClick={handleSave} loading={saving} variant="primary" icon={Save} size="lg">Save Shipment</Button>
-      </div>
+      {/* R2/R3: mirrors the header's Save Draft / Save & Activate / Save logic exactly — this footer
+          button previously always called handleSave() with no argument (activate=undefined), which
+          would have silently kept every save as a draft-preserving save forever, never activating a
+          shipment. Locked (R13) shipments show neither header nor footer save controls. */}
+      {!locked && (
+        <div className="mt-4 flex justify-end gap-2">
+          {form.status === 'draft' && <Button onClick={() => handleSave(false)} loading={saving} variant="secondary" size="lg">Save Draft</Button>}
+          <Button onClick={() => handleSave(true)} loading={saving} variant="primary" icon={Save} size="lg">{form.status === 'draft' ? 'Save & Activate' : 'Save Shipment'}</Button>
+        </div>
+      )}
+
+      {/* R5: Edit hardcoded document text — declaration paragraph + signatory title, per document
+          type, before downloading or printing. */}
+      <Modal isOpen={!!editingDocType} onClose={() => setEditingDocType(null)} title={`Edit Text — ${editingDocType ? docTypeLabel(editingDocType) : ''}`} size="lg">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Declaration paragraph</label>
+            <textarea rows={6} value={textDraft.declaration} onChange={e => setTextDraft(p => ({ ...p, declaration: e.target.value }))} className="input-field resize-none text-sm" />
+          </div>
+          <Input label="Signatory title" value={textDraft.signatoryTitle} onChange={e => setTextDraft(p => ({ ...p, signatoryTitle: e.target.value }))} />
+          <div className="flex items-center justify-between pt-2">
+            <button
+              onClick={() => setTextDraft({ declaration: DEFAULT_DOCUMENT_TEXT[docTextKey(editingDocType)].declaration, signatoryTitle: DEFAULT_DOCUMENT_TEXT[docTextKey(editingDocType)].signatoryTitle })}
+              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors">
+              <RotateCcw className="w-3.5 h-3.5" /> Reset to default
+            </button>
+            <div className="flex gap-2">
+              <Button onClick={() => setEditingDocType(null)} variant="secondary">Cancel</Button>
+              <Button onClick={handleSaveTextOverride} loading={savingText} variant="primary">Save</Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

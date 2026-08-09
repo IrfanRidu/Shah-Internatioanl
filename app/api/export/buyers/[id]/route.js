@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import ExportBuyer from '@/models/ExportBuyer';
+// Bug fix (pre-existing, found during the same sweep as buyers/route.js).
+import ExportCountry from '@/models/ExportCountry';
 import { recordAuditLog, moveToRecycleBin } from '@/lib/exportAudit';
 
 const guard = async () => { const s = await getServerSession(authOptions); return ['superAdmin','admin'].includes(s?.user?.role); };

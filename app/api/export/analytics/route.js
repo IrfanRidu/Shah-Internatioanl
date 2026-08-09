@@ -4,7 +4,14 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import ExportShipment from '@/models/ExportShipment';
 import Settings from '@/models/Settings';
+// Bug fix: needed so Mongoose has every populated model's schema registered. IncentiveApplication
+// is new to batch 8; ExportBuyer/ExportCountry are a pre-existing gap found while already deep in
+// this same fix — see the identical comment in shipments/route.js.
+import IncentiveApplication from '@/models/IncentiveApplication';
+import ExportBuyer from '@/models/ExportBuyer';
+import ExportCountry from '@/models/ExportCountry';
 import { calculateShipmentFinancials } from '@/lib/utils';
+import { resolveEffectiveRateBDT } from '@/lib/incentiveUtils';
 import { fetchLiveRates, STATIC_FALLBACK } from '@/lib/exchangeRates';
 
 // Issue 47: convert a BDT amount into the selected base currency using live market rates (never a
@@ -51,6 +58,7 @@ export async function GET(request) {
     const rows = await ExportShipment.find(matchStage)
       .populate('buyer', 'name currency')
       .populate('country', 'name code flag')
+      .populate('incentiveApplication', 'status manualRateBDT lockedRateBDT title')
       .sort({ date: 1 })
       .lean();
 
@@ -65,11 +73,15 @@ export async function GET(request) {
     // (returned as computed.freightCostBDT) before it's converted again into the analytics display
     // currency below, same two-step treatment as every other cost figure here.
     const analytics = rows.map(s => {
+      // R15: an Incentive Application's manual (or, once claimed, frozen) rate wins over this
+      // shipment's own live-tracked exchangeRateBDT for every metric below — "other metrics of the
+      // selected shipments according to the manual rate", not just Receive Amount.
+      const effectiveRate = resolveEffectiveRateBDT(s, s.incentiveApplication);
       const computed = calculateShipmentFinancials({
         initialBalance,
         freightCost: s.freightCost, goodsCost: s.goodsCost, exportProcessingCost: s.exportProcessingCost,
         othersCost: s.othersCost, damage: s.damage, orderValueForeign: s.orderValueForeign,
-        exchangeRateBDT: s.exchangeRateBDT, incentive: s.incentive,
+        exchangeRateBDT: effectiveRate, incentive: s.incentive, ttEntries: s.ttEntries,
       });
       const conv = (v) => toBaseCurrency(v || 0, baseCurrency, rates);
       return {
@@ -91,7 +103,7 @@ export async function GET(request) {
         // Order Value: NEVER converted — always the shipment's own currency (issue 47)
         orderValueForeign: s.orderValueForeign || 0,
         orderCurrency: s.orderCurrency || 'EUR',
-        exchangeRateBDT: s.exchangeRateBDT || 0,
+        exchangeRateBDT: effectiveRate || 0,
         receiveAmountBDT: conv(computed.receiveAmountBDT),
         availableBalance: conv(computed.availableBalance),
         shipmentMargin: conv(computed.shipmentMargin),

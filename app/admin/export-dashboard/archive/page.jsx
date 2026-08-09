@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Search, Archive, Download, Package, ReceiptText, Globe, Paperclip } from 'lucide-react';
+import { ArrowLeft, Search, Archive, Download, Package, ReceiptText, Globe, Paperclip, Trash2 } from 'lucide-react';
 import Loader from '@/components/ui/Loader';
 import Pagination from '@/components/ui/Pagination';
 import { format } from 'date-fns';
@@ -166,6 +166,33 @@ export default function ExportArchivePage() {
 
   useEffect(() => { fetchShipments(); }, [page, search, country]);
 
+  // Issue 8: the shipment DELETE route (app/api/export/shipments/[id]/route.js) already snapshots to
+  // the recycle bin and writes an audit log entry before removing the document — that route already
+  // existed and already does exactly what's needed here (see its own comments); the Archive page
+  // itself just never exposed a way to call it. It also already enforces its own guards server-side
+  // (a claimed/locked shipment, or one still tied to a pending Incentive Application, is refused with
+  // an explanatory message) — surfaced below via the toast on failure, nothing duplicated client-side.
+  const [deletingId, setDeletingId] = useState(null);
+  const handleDelete = async (s) => {
+    if (!confirm(`Delete shipment ${s.shipmentNo}? It will be moved to the recycle bin and can be restored later. This does not permanently erase it.`)) return;
+    setDeletingId(s._id);
+    try {
+      const r = await fetch(`/api/export/shipments/${s._id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (d.success) {
+        toast.success('Shipment deleted — restorable from the recycle bin');
+        setShipments((prev) => prev.filter((x) => x._id !== s._id));
+        setTotal((t) => Math.max(0, t - 1));
+      } else {
+        toast.error(d.message || 'Could not delete this shipment');
+      }
+    } catch {
+      toast.error('Could not delete this shipment');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
@@ -178,6 +205,9 @@ export default function ExportArchivePage() {
           </h1>
           <p className="text-sm text-gray-500">{total} completed shipment{total === 1 ? '' : 's'} · PDF documents only, all in one place for review</p>
         </div>
+        <Link href="/admin/export-dashboard/audit-log" className="text-xs font-semibold text-gray-500 hover:text-brand hover:underline flex-shrink-0">
+          Deleted a shipment by mistake? Restore it →
+        </Link>
         <div className="flex rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden text-xs font-medium flex-shrink-0" title="Style used when generating a document from this page">
           <button type="button" onClick={() => setDocStyle('letterhead')}
             className={`px-2.5 py-1.5 transition-colors ${docStyle === 'letterhead' ? 'text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
@@ -223,11 +253,25 @@ export default function ExportArchivePage() {
                   <div>
                     <p className="font-bold text-gray-900 dark:text-white text-sm">{s.shipmentNo}</p>
                     <p className="text-xs text-gray-500">{s.buyer?.name || '—'} · {s.country?.flag || '🌍'} {s.country?.name || '—'} · {s.date ? format(new Date(s.date), 'dd MMM yyyy') : '—'}</p>
+                    {/* R13: shipments completed via a claimed Incentive Application land here
+                        automatically — link straight back to it for context. */}
+                    {s.incentiveApplication?.status === 'claimed' && (
+                      <Link href={`/admin/export-dashboard/incentives/${s.incentiveApplication._id}`} className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-amber-600 hover:underline">
+                        🔒 Claimed via {s.incentiveApplication.title}
+                      </Link>
+                    )}
                   </div>
-                  <Link href={`/admin/export-dashboard/countries/${s.country?._id}/buyers/${s.buyer?._id}/shipments/${s._id}`}
-                    className="text-xs font-semibold text-brand hover:underline flex-shrink-0">
-                    Open shipment →
-                  </Link>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <Link href={`/admin/export-dashboard/countries/${s.country?._id}/buyers/${s.buyer?._id}/shipments/${s._id}`}
+                      className="text-xs font-semibold text-brand hover:underline">
+                      Open shipment →
+                    </Link>
+                    <button onClick={() => handleDelete(s)} disabled={deletingId === s._id}
+                      title="Delete shipment (recoverable from the recycle bin)"
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-60">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <ShipmentFileGroup shipment={s} letterheadUrl={letterheadUrl} exporterInfo={exporterInfo} docStyle={docStyle} />
               </div>

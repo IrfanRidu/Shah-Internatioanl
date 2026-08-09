@@ -127,6 +127,11 @@ const SettingsSchema = new mongoose.Schema({
   // displays in each shipment's own configured currency.
   exportAnalyticsBaseCurrency: { type: String, default: 'BDT' },
 
+  // Batch 8 (R12) — auto-increments every time a new Incentive Application is created, so its
+  // default title "Incentive Application – N" is always a fresh, never-reused serial even across
+  // deletions (see app/api/export/incentive-applications/route.js).
+  exportIncentiveApplicationCounter: { type: Number, default: 0 },
+
   // Requirement 5 (Shipment Configuration) — pre-added option lists suggested when filling in a
   // shipment's own Mode of Carrying / Landing Port / Port of Discharge / Final Destination / Sales
   // Terms / Country of Origin fields. Each shipment's field stays a plain String (unchanged) — these

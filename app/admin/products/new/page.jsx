@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import toast from 'react-hot-toast';
+import { resizeImageFile } from '@/lib/clientImageResize';
 import { Upload, X, Save, ArrowLeft, RefreshCw } from 'lucide-react';
 import { computeHarvestingSeason } from '@/lib/utils';
 
@@ -109,18 +110,19 @@ export function ProductForm({ initialData = {}, productId = null }) {
     if (!files.length) return;
     setUploading(true);
     for (const file of files) {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const res = await fetch('/api/upload', {
+      // Resized client-side first — see resizeImageFile's own comment on why that matters on Vercel.
+      resizeImageFile(file, { maxDimension: 1600, quality: 0.85 }).then((dataUrl) => {
+        fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: reader.result, folder: 'products' }),
-        });
-        const data = await res.json();
-        if (data.success) setForm(p => ({ ...p, images: [...p.images, data.url] }));
-        else toast.error('Image upload failed');
-      };
-      reader.readAsDataURL(file);
+          body: JSON.stringify({ image: dataUrl, folder: 'products' }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success) setForm(p => ({ ...p, images: [...p.images, data.url] }));
+            else toast.error(data.message || 'Image upload failed');
+          });
+      }).catch((err) => toast.error(err.message || 'Image upload failed'));
     }
     setUploading(false);
   };

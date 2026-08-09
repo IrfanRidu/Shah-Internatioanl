@@ -156,22 +156,24 @@ describe('paginateQuery', () => {
 });
 
 describe('buildProductQuery', () => {
-  it('always scopes to active products', () => {
-    expect(buildProductQuery({})).toEqual({ isActive: true });
+  it('always scopes to active products (but not by excluding legacy docs missing the field)', () => {
+    // isActive uses $ne:false, not ===true — see buildProductQuery's own comment: a product missing
+    // the field entirely (predates it, or was inserted outside the app) must still be findable.
+    expect(buildProductQuery({})).toEqual({ isActive: { $ne: false } });
   });
 
   it('adds a category filter', () => {
-    expect(buildProductQuery({ category: 'veg123' })).toEqual({ isActive: true, category: 'veg123' });
+    expect(buildProductQuery({ category: 'veg123' })).toEqual({ isActive: { $ne: false }, category: 'veg123' });
   });
 
   it('maps buyerType to the correct availability flag', () => {
-    expect(buildProductQuery({ buyerType: 'local' })).toEqual({ isActive: true, availableForLocal: true });
-    expect(buildProductQuery({ buyerType: 'international' })).toEqual({ isActive: true, availableForInternational: true });
+    expect(buildProductQuery({ buyerType: 'local' })).toEqual({ isActive: { $ne: false }, availableForLocal: { $ne: false } });
+    expect(buildProductQuery({ buyerType: 'international' })).toEqual({ isActive: { $ne: false }, availableForInternational: { $ne: false } });
   });
 
   it('converts the isHarvesting string filter to a boolean', () => {
-    expect(buildProductQuery({ isHarvesting: 'true' })).toEqual({ isActive: true, isHarvestingSeason: true });
-    expect(buildProductQuery({ isHarvesting: 'false' })).toEqual({ isActive: true, isHarvestingSeason: false });
+    expect(buildProductQuery({ isHarvesting: 'true' })).toEqual({ isActive: { $ne: false }, isHarvestingSeason: true });
+    expect(buildProductQuery({ isHarvesting: 'false' })).toEqual({ isActive: { $ne: false }, isHarvestingSeason: false });
   });
 
   it('escapes regex special characters in search text instead of passing them through raw', () => {

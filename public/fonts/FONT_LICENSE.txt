@@ -1,0 +1,14 @@
+FreeSansBengali.ttf
+====================
+Derived from GNU FreeSans (part of the GNU FreeFont family), subsetted to the Bengali Unicode
+block plus basic Latin/punctuation for use in this app's Bengali PDF generation (Ka Form and
+Stamp Application documents), where it lets Bengali text be shaped and rendered correctly via
+an offscreen canvas before being embedded in the generated PDF.
+
+Source: GNU FreeFont — https://www.gnu.org/software/freefont/
+License: GNU GPL v3 (or later) WITH the GNU FreeFont font-embedding exception, which explicitly
+permits embedding/subsetting the font for use in documents without that requiring the document
+or application to be licensed under the GPL. See the project site above for the exception text.
+
+Subsetted with fonttools' pyftsubset, keeping the cmap, GSUB, and GPOS tables needed for correct
+Bengali shaping (conjuncts, reordering vowel signs) intact.

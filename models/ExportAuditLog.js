@@ -7,7 +7,11 @@ import mongoose from 'mongoose';
 // state without re-deriving anything.
 const ExportAuditLogSchema = new mongoose.Schema({
   action: { type: String, enum: ['create', 'update', 'delete', 'restore'], required: true },
-  entityType: { type: String, enum: ['shipment', 'buyer', 'country'], required: true },
+  // Batch 9 (R18): 'exportContract' added — contracts sit at the same hierarchical tier as
+  // buyers/countries (country > buyer > contract > shipments) so they're logged the same way.
+  // Config-only entities (category/license/bank/ctn/incentive application) remain deliberately
+  // unlogged, per batch 8's own explicit call on that.
+  entityType: { type: String, enum: ['shipment', 'buyer', 'country', 'exportContract'], required: true },
   entityId: { type: mongoose.Schema.Types.ObjectId, required: true },
   entityLabel: String, // human-readable identifier at the time of the action (shipmentNo / buyer name / country name)
   before: mongoose.Schema.Types.Mixed,

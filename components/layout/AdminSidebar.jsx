@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Users, Tag,
   Image as ImageIcon, Zap, Percent, Settings, BarChart3,
   Warehouse, Shield, Layers, FileText, LogOut, Leaf, Menu,
-  Mail, MessageSquare, Star, Globe2, Ship, History
+  Mail, MessageSquare, Star, Globe2, Ship, History, DollarSign
 } from 'lucide-react';
 import { getPermissions } from '@/lib/permissions';
 import { useSettings } from '@/contexts/SettingsContext';
@@ -61,6 +61,7 @@ const navGroups = [
     label: 'Export & Import',
     items: [
       { href: '/admin/export-dashboard', label: 'Export Dashboard', icon: Globe2 },
+      { href: '/admin/export-dashboard/incentives', label: 'Export Incentives', icon: DollarSign },
       { href: '/admin/export-dashboard/analytics', label: 'Export Analytics', icon: BarChart3 },
       { href: '/admin/export-dashboard/archive', label: 'Export Archives', icon: FileText },
       { href: '/admin/export-dashboard/audit-log', label: 'Audit Log & Recycle Bin', icon: History },

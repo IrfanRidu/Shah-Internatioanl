@@ -7,6 +7,7 @@ import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
+import { resizeImageFile } from '@/lib/clientImageResize';
 
 // Country flag emoji from ISO code
 const flagEmoji = (code) => {
@@ -80,19 +81,26 @@ export default function ExportDashboardPage() {
   const handleLetterheadUpload = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setUploadingLH(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: reader.result, folder: 'letterheads' }) });
+    try {
+      // Letterhead is now used as the actual PDF page background (see lib/pdfLetterhead.js), so it
+      // keeps a generous resolution here — still resized client-side first (Vercel's Serverless
+      // Functions hard-cap request bodies at 4.5MB, not configurable, and an unresized photo/scan
+      // can easily exceed that), just at a much higher ceiling than the small-icon uploads elsewhere
+      // in Settings, so the letterhead still prints crisp at full page width.
+      const dataUrl = await resizeImageFile(file, { maxDimension: 2000, quality: 0.88 });
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'letterheads' }) });
       const data = await res.json();
       if (data.success) {
         const settingsRes = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exportLetterheadUrl: data.url, exportLetterheadUpdatedAt: new Date() }) });
         const settingsData = await settingsRes.json();
         if (settingsData.success) { setLetterheadUrl(data.url); toast.success('Company letterhead updated — now used on every shipment'); }
         else toast.error('Uploaded, but failed to save as the company letterhead');
-      } else toast.error('Upload failed');
+      } else toast.error(data.message || 'Upload failed');
+    } catch (err) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
       setUploadingLH(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const fetchCountries = async () => {
@@ -153,7 +161,7 @@ export default function ExportDashboardPage() {
           )}
           <div className="flex-1 min-w-[160px]">
             <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Company Letterhead</p>
-            <p className="text-xs text-amber-600 mt-0.5">Used as the header on every printed/downloaded shipment document, for every country and buyer, until you replace it here</p>
+            <p className="text-xs text-amber-600 mt-0.5">Used as the actual page background on every printed/downloaded shipment document — your image is placed exactly as uploaded (full width, original proportions, never stretched or cropped), for every country and buyer, until you replace it here</p>
             {letterheadUrl && <p className="text-xs text-green-600 mt-1">✓ Currently set</p>}
           </div>
           <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-amber-300 rounded-xl cursor-pointer text-sm font-medium text-amber-700 hover:bg-amber-50 transition-all">
@@ -212,6 +220,10 @@ export default function ExportDashboardPage() {
         <Link href="/admin/export-dashboard/archive"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
           🗂️ Export Archives
+        </Link>
+        <Link href="/admin/export-dashboard/incentives"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
+          💰 Incentive
         </Link>
         <Link href="/admin/export-dashboard/settings"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">

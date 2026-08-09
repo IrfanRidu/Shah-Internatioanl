@@ -5,7 +5,8 @@ import mongoose from 'mongoose';
 // it back "exactly where it was before deletion", including references from other collections that
 // pointed at that _id (e.g. shipments referencing a restored buyer/country still resolve correctly).
 const ExportRecycleBinSchema = new mongoose.Schema({
-  entityType: { type: String, enum: ['shipment', 'buyer', 'country'], required: true },
+  // Batch 9 (R18): 'exportContract' added — see ExportAuditLog.js's identical comment.
+  entityType: { type: String, enum: ['shipment', 'buyer', 'country', 'exportContract'], required: true },
   originalId: { type: mongoose.Schema.Types.ObjectId, required: true },
   entityLabel: String,
   data: { type: mongoose.Schema.Types.Mixed, required: true }, // full document snapshot at time of delete

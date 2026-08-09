@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { generateShipmentDocPDF, docTypeLabel } from '@/lib/exportDocuments';
+import { generateShipmentDocPDF, docTypeLabel, resolveDocumentText } from '@/lib/exportDocuments';
 import { getDocumentColumns, shouldShowBdHsCode, columnHeaderLabel, avgPrice } from '@/lib/exportColumns';
 
 // ─── Shared plain/formal styling — batch 7: the previous dark-header / colored-row / coded-banner
@@ -54,44 +54,22 @@ function renderGrandCell(key, grand) {
 // Shared header for all documents. Letterhead comes from the shipment's Export License if it has
 // one, else the GLOBAL company setting (issue 39, requirement 7) — resolved by the caller, this
 // component just renders whatever URL it's given.
+// Issue 9 (R24) / issue 2 (R25): matches the downloaded PDF's own letterhead handling exactly now
+// (lib/pdfLetterhead.js) — the uploaded image is trusted at its own natural aspect ratio, full
+// width, no banner-shape restriction and no coded fallback of any kind. `plain` mode remains exactly
+// that: no banner or graphic of any kind above the title, per the reference documents.
 function DocHeader({ letterheadUrl, exporterInfo, plain, onLetterheadLoad }) {
-  // Issue 7: only trust the uploaded image as a full-width banner if it's actually banner-shaped
-  // (wide) — a portrait/near-square upload would otherwise get squeezed to a barely-visible
-  // thumbnail by maxHeight, checked once the image loads.
-  const [imgIsBannerShaped, setImgIsBannerShaped] = useState(null); // null = not checked yet
-  const checkShape = (e) => {
-    const el = e.target;
-    setImgIsBannerShaped(el.naturalWidth && el.naturalHeight ? (el.naturalWidth / el.naturalHeight) >= 2 : false);
-    onLetterheadLoad?.(e);
-  };
-  // R2: "plain A4" must be exactly that — no banner or graphic of any kind above the title, per
-  // the reference documents. No coded fallback here in plain mode, ever.
   if (plain) return null;
-  const showImage = letterheadUrl && imgIsBannerShaped !== false;
+  if (!letterheadUrl) return null;
   return (
     <div className="header">
-      {showImage ? (
-        <img
-          src={letterheadUrl}
-          alt="Letterhead"
-          style={{ width: '100%', maxHeight: '130px', objectFit: 'contain', display: 'block', marginBottom: '16px', visibility: imgIsBannerShaped === null ? 'hidden' : 'visible', position: imgIsBannerShaped === null ? 'absolute' : 'static' }}
-          onLoad={checkShape}
-          onError={(e) => { setImgIsBannerShaped(false); onLetterheadLoad?.(e); }}
-        />
-      ) : null}
-      {/* Coded fallback banner — letterhead MODE was selected, but no real letterhead has been
-          uploaded yet (or it failed the banner-shape check). Never shown in plain mode (see the
-          early return above). */}
-      {(!letterheadUrl || imgIsBannerShaped === false) && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: '#1a3d2e', borderRadius: '10px', padding: '16px 20px' }}>
-          <div>
-            <div style={{ fontSize: '26px', fontWeight: '700', fontStyle: 'italic', fontFamily: 'Georgia, "Times New Roman", serif', color: '#ffffff', lineHeight: 1.15 }}>{exporterInfo?.exporterName || 'Shah International'}</div>
-          </div>
-          <div style={{ fontSize: '10.5px', color: '#e9f2ee', textAlign: 'right', lineHeight: 1.6, maxWidth: '55%' }}>
-            {exporterInfo?.exporterAddress}
-          </div>
-        </div>
-      )}
+      <img
+        src={letterheadUrl}
+        alt="Letterhead"
+        style={{ width: '100%', height: 'auto', display: 'block', marginBottom: '16px' }}
+        onLoad={onLetterheadLoad}
+        onError={onLetterheadLoad}
+      />
     </div>
   );
 }
@@ -141,15 +119,9 @@ function InfoGrid({ shipment, buyer, exporterInfo }) {
   );
 }
 
-function SignatureBlock({ exporterInfo }) {
-  return (
-    <div style={{ marginTop: '36px', textAlign: 'right', fontSize: '10px' }}>
-      <div style={{ borderTop: '1px solid #000', display: 'inline-block', paddingTop: '4px', minWidth: '160px' }}>
-        Proprietor<br />{exporterInfo?.exporterName || 'Shah International'}
-      </div>
-    </div>
-  );
-}
+// SignatureBlock (a drawn "line + Proprietor + company name") was removed in R25 (issue 2) — no
+// signature/stamp is printed for Packing List/Buyer's Invoice/BD Invoice any more; a physical
+// company stamp is added by hand afterward, which is exactly what that block used to stand in for.
 
 // R2: Packing List — SL/Name+Botanical always shown, plus whichever columns this shipment's Export
 // Category enables (packSizeKg/totalCTN/quantityKg by default — the Fresh Fruits & Vegetables
@@ -158,6 +130,7 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
   const items = (shipment.items || []).filter((i) => i.productName);
   const grand = grandTotals(items);
   const columns = getDocumentColumns(shipment.exportCategory, 'packingList');
+  const { declaration, signatoryTitle } = resolveDocumentText('packingList', shipment, exporterInfo);
 
   return (
     <>
@@ -193,13 +166,11 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
       </div>
 
       <div style={DECLARATION_STYLE}>
-        1. We hereby certify that the information on this invoice is true and correct and that contents of this shipment are as state above.<br />
+        {declaration}<br />
         <b>Total Carton: {grand.totalCTN} CTN</b><br />
         <b>Net Weight: {shipment.totalNetWeightKg} KG</b><br />
         <b>Gross Weight: {shipment.totalGrossWeightKg} KG</b>
       </div>
-
-      <SignatureBlock exporterInfo={exporterInfo} />
     </>
   );
 }
@@ -217,6 +188,7 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
   const grand = grandTotals(items);
   const columns = getDocumentColumns(shipment.exportCategory, isBuyer ? 'buyerInvoice' : 'bdInvoice');
   const showBdHsCode = !isBuyer && shouldShowBdHsCode(shipment.exportCategory);
+  const { declaration, signatoryTitle } = resolveDocumentText(isBuyer ? 'buyerInvoice' : 'bdInvoice', shipment, exporterInfo);
 
   return (
     <>
@@ -256,19 +228,11 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
       </div>
 
       <div style={DECLARATION_STYLE}>
-        {isBuyer ? (
-          <>
-            THE EXPORTER {(exporterInfo.exporterName || 'SHAH INTERNATIONAL').toUpperCase()}. BDREX{shipment.rexNo || ''} OF THE PRODUCTS COVERED BY THIS DOCUMENTS DECLARES THAT, EXCEPT WHERE OTHERWISE CLEARLY INDICATED. THESE PRODUCTS ARE OF BANGLADESH PREFERENTIAL ORIGIN (5) ACCORDING TO RULES OF THE GENERALIZED SYSTEM OF PREFERENCES OF THE EUROPEAN UNION AND THAT THE ORIGIN CRITERION MET IS W 0709,0714,0710, 0810 (07119000)1. We hereby certify that the information on this invoice is true and correct and that contents of this shipment are as state above.<br />
-          </>
-        ) : (
-          <>1. We hereby certify that the information on this invoice is true and correct and that contents of this shipment are as state above.<br /></>
-        )}
+        {declaration}<br />
         <b>Total Carton: {grand.totalCTN} CTN</b><br />
         <b>Net Weight: {shipment.totalNetWeightKg} KG</b><br />
         <b>Gross Weight: {shipment.totalGrossWeightKg} KG</b>
       </div>
-
-      <SignatureBlock exporterInfo={exporterInfo} />
     </>
   );
 }

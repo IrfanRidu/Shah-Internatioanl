@@ -4,6 +4,7 @@ import { ArrowLeft, History, Trash2, RotateCcw, Plus, Pencil, X as XIcon } from 
 import { useRouter } from 'next/navigation';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
+import { buildFieldDiff } from '@/lib/auditDiff';
 
 // Issue 45: every add/edit/delete anywhere in the export dashboard is recorded, and every deletion
 // is recoverable. This page has two tabs: a chronological Activity Log, and a Recycle Bin from which
@@ -15,6 +16,47 @@ const ACTION_META = {
   delete: { label: 'Deleted', icon: Trash2, color: 'text-red-600 bg-red-50 dark:bg-red-900/20' },
   restore: { label: 'Restored', icon: RotateCcw, color: 'text-purple-600 bg-purple-50 dark:bg-purple-900/20' },
 };
+
+// R23: replaces the old raw JSON-dump ("shows the changes as database") with a real field-by-field
+// diff — human labels, formatted values, and for updates ONLY the fields that actually changed
+// (create/delete show every meaningful field the document had, since there's no meaningful "before"
+// or "after" to compare against for those). All the actual comparison/formatting logic lives in
+// lib/auditDiff.js — this component is purely presentational.
+function FieldDiffTable({ log }) {
+  const rows = buildFieldDiff(log);
+  if (rows.length === 0) {
+    return <p className="mt-2 text-xs text-gray-400 italic">No field-level changes to show for this entry.</p>;
+  }
+  const isTwoSided = log.action === 'update' || log.action === 'restore';
+  return (
+    <div className="mt-2 rounded-xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-50 dark:bg-gray-800/60 text-left text-gray-400">
+            <th className="py-1.5 px-2.5 font-medium">Field</th>
+            {isTwoSided ? (<><th className="py-1.5 px-2.5 font-medium text-red-500">Before</th><th className="py-1.5 px-2.5 font-medium text-green-600">After</th></>)
+              : (<th className="py-1.5 px-2.5 font-medium">{log.action === 'delete' ? 'Value (removed)' : 'Value (set)'}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className="border-t border-gray-50 dark:border-gray-800/50">
+              <td className="py-1.5 px-2.5 font-medium text-gray-600 dark:text-gray-300 whitespace-nowrap align-top">{row.label}</td>
+              {isTwoSided ? (
+                <>
+                  <td className="py-1.5 px-2.5 text-red-500/80 break-words align-top">{row.before}</td>
+                  <td className="py-1.5 px-2.5 text-green-600 break-words align-top">{row.after}</td>
+                </>
+              ) : (
+                <td className="py-1.5 px-2.5 text-gray-600 dark:text-gray-300 break-words align-top">{log.action === 'delete' ? row.before : row.after}</td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function ExportAuditLogPage() {
   const router = useRouter();
@@ -77,6 +119,7 @@ export default function ExportAuditLogPage() {
           <option value="shipment">Shipments</option>
           <option value="buyer">Buyers</option>
           <option value="country">Countries</option>
+          <option value="exportContract">Export Contracts</option>
         </select>
       </div>
 
@@ -103,22 +146,7 @@ export default function ExportAuditLogPage() {
                       {expanded === log._id ? 'Hide details' : 'View details'}
                     </button>
                   )}
-                  {expanded === log._id && (
-                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {log.before && (
-                        <div className="bg-red-50/50 dark:bg-red-900/10 rounded-lg p-2">
-                          <p className="text-[10px] font-semibold text-red-500 mb-1">BEFORE</p>
-                          <pre className="text-[10px] text-gray-600 dark:text-gray-400 overflow-x-auto max-h-40">{JSON.stringify(log.before, null, 1)}</pre>
-                        </div>
-                      )}
-                      {log.after && (
-                        <div className="bg-green-50/50 dark:bg-green-900/10 rounded-lg p-2">
-                          <p className="text-[10px] font-semibold text-green-600 mb-1">AFTER</p>
-                          <pre className="text-[10px] text-gray-600 dark:text-gray-400 overflow-x-auto max-h-40">{JSON.stringify(log.after, null, 1)}</pre>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {expanded === log._id && <FieldDiffTable log={log} />}
                 </div>
               </div>
             );

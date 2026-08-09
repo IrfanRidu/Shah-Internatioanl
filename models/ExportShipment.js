@@ -23,6 +23,15 @@ const ShipmentItemSchema = new mongoose.Schema({
   totalValue: Number,
 });
 
+// Batch 8 (R7): one telegraphic-transfer receipt against this shipment. `ttValue` is always in the
+// shipment's own baseCurrency (not BDT) — see R8 for how the sum of these overrides Order Value for
+// the Receive Amount (BDT) calculation once at least one entry has a value.
+const TTEntrySchema = new mongoose.Schema({
+  ttNumber: String,
+  ttDate: Date,
+  ttValue: Number,
+});
+
 const ExportShipmentSchema = new mongoose.Schema({
   buyer: { type: mongoose.Schema.Types.ObjectId, ref: 'ExportBuyer', required: true },
   country: { type: mongoose.Schema.Types.ObjectId, ref: 'ExportCountry', required: true },
@@ -81,6 +90,22 @@ const ExportShipmentSchema = new mongoose.Schema({
   // incentive-related fields) and its card image on the buyer's shipment list (requirement 11).
   exportCategory: { type: mongoose.Schema.Types.ObjectId, ref: 'ExportCategory' },
 
+  // Batch 9 (R18): every shipment now belongs to exactly one Export Contract (country → buyer →
+  // Export Contract → shipments). Selecting one auto-fills contractNo/baseCurrency/exportCategory
+  // below from the contract (same auto-fill-then-stays-editable pattern as bank account/license
+  // selection) — this field is the actual reference; contractNo etc. are independent snapshot
+  // fields kept for backward compatibility with the existing document generators, which already
+  // just read shipment.contractNo directly. `null` only for pre-batch-9 shipments that predate this
+  // entity — see the buyer/contracts pages' "shipments without a contract" fallback view.
+  exportContract: { type: mongoose.Schema.Types.ObjectId, ref: 'ExportContract', default: null },
+
+  // Batch 8 (R9-R16): set once this shipment is selected into an Incentive Application (R11);
+  // cleared again only if that application is deleted before being claimed (R12). Drives: (a)
+  // exclusion from the "Available for Incentive Application" list (R10), (b) the effective-rate
+  // resolver in lib/incentiveUtils.js (R15), (c) the full edit-lock once the application is
+  // claimed (R13) — enforced server-side in the shipments PUT/DELETE routes, not just in the UI.
+  incentiveApplication: { type: mongoose.Schema.Types.ObjectId, ref: 'IncentiveApplication', default: null },
+
   // Batch 7 architecture (R1-R4): `items` is now the ONE master product table, entered only in
   // the Shipment Details tab. Packing List and Buyer's Invoice are READ-ONLY views computed from
   // `items` (filtered to each document's own column set — see lib/exportColumns.js) — they no
@@ -130,6 +155,13 @@ const ExportShipmentSchema = new mongoose.Schema({
   damage: Number,               // BDT
   netProfit: Number,            // BDT
 
+  // Batch 8 (R6/R7): TT Configuration section — admin logs each telegraphic transfer received
+  // against this shipment. See R8: once any entry here has a value, the SUM (converted at
+  // exchangeRateBDT) overrides orderValueForeign for Receive Amount (BDT) purposes, permanently
+  // (i.e. from then on, for as long as any entry remains) — see calculateShipmentFinancials in
+  // lib/utils.js for the exact formula.
+  ttEntries: [TTEntrySchema],
+
   // Currency of invoice (for Buyer's Invoice)
   invoiceCurrency: { type: String, default: 'EUR' },
 
@@ -143,13 +175,29 @@ const ExportShipmentSchema = new mongoose.Schema({
   // Company letterhead (Cloudinary URL uploaded by admin for this buyer/shipment)
   letterheadUrl: String,
 
+  // Batch 8 (R5): lets the admin edit the hardcoded declaration paragraph / signatory title on a
+  // per-shipment, per-document basis before downloading or printing. Empty/undefined = use the
+  // built-in default text (see DEFAULT_DOCUMENT_TEXT in lib/exportDocuments.js) — this object only
+  // ever holds an admin's deliberate override, so a shipment nobody has touched costs nothing extra.
+  documentTextOverrides: {
+    packingList: { declaration: String, signatoryTitle: String },
+    buyerInvoice: { declaration: String, signatoryTitle: String },
+    bdInvoice: { declaration: String, signatoryTitle: String },
+  },
+
   // Admin-editable photos + captions shown alongside the packing list / invoice (issue 43)
   photos: [{
     url: String,
     caption: String,
   }],
 
-  status: { type: String, enum: ['draft', 'active', 'completed', 'archived'], default: 'active' },
+  // Batch 8 (R2/R3): a shipment now starts life as 'draft' — it can be saved repeatedly while draft
+  // with no audit logging at all (see the shipments API routes), and only becomes 'active'
+  // (permanently — a PUT can never move it back to draft, see the route) the moment the admin uses
+  // the real Save action, which is also the moment audit logging starts for it. Shipments saved
+  // before this batch already have an explicit 'active'/'completed'/'archived' status stored, so
+  // this default only affects genuinely new documents from here on.
+  status: { type: String, enum: ['draft', 'active', 'completed', 'archived'], default: 'draft' },
   notes: String,
 }, { timestamps: true });
 

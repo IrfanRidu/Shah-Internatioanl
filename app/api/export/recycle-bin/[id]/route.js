@@ -6,9 +6,10 @@ import ExportRecycleBin from '@/models/ExportRecycleBin';
 import ExportShipment from '@/models/ExportShipment';
 import ExportBuyer from '@/models/ExportBuyer';
 import ExportCountry from '@/models/ExportCountry';
+import ExportContract from '@/models/ExportContract';
 import { recordAuditLog } from '@/lib/exportAudit';
 
-const MODELS = { shipment: ExportShipment, buyer: ExportBuyer, country: ExportCountry };
+const MODELS = { shipment: ExportShipment, buyer: ExportBuyer, country: ExportCountry, exportContract: ExportContract };
 
 // Issue 45: restoring puts the deleted item back "exactly at its place as it was before deletion" —
 // recreated with the SAME _id and the exact field values from the snapshot, so anything that still

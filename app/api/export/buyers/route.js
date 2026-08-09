@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import ExportBuyer from '@/models/ExportBuyer';
+// Bug fix (pre-existing, found during a systematic sweep of app/api/export/ while fixing the same
+// pattern elsewhere for batch 8): this route's .populate('country') needs the model registered.
+import ExportCountry from '@/models/ExportCountry';
 import { recordAuditLog } from '@/lib/exportAudit';
 
 export async function GET(request) {
