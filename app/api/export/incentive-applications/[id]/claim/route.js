@@ -14,6 +14,11 @@ import ExportLicense from '@/models/ExportLicense';
 import { fetchLiveRates, STATIC_FALLBACK } from '@/lib/exchangeRates';
 import { cascadeRecomputeShipments } from '@/lib/incentiveServer';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // R13: "Mark as Incentive Claimed" — moves the application to the Claimed tab, and every member
 // shipment becomes fully locked (no edits of any kind) with its BDT rate frozen at whatever was
 // live/manual at this exact moment, marked completed, and (since Export Archive already just

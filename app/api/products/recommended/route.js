@@ -5,6 +5,11 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Product from '@/models/Product';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // "Matches your interests" — genuinely derived from the signed-in buyer's own
 // order history (which categories they've actually bought from before), not
 // a fabricated recommendation. Guests / buyers with no order history yet fall
@@ -35,8 +40,10 @@ export async function GET(request) {
 
     if (categoryIds.length === 0 && fallbackCategory) categoryIds = [fallbackCategory];
 
+    // $ne:false, not ===true — see buildProductQuery's comment in lib/utils.js: a product missing
+    // the field entirely must still be eligible for recommendation, not silently excluded.
     const query = {
-      isActive: true,
+      isActive: { $ne: false },
       _id: { $nin: excludeIds },
       ...(categoryIds.length ? { category: { $in: categoryIds } } : {}),
     };
@@ -54,7 +61,7 @@ export async function GET(request) {
     if (products.length < limit) {
       const haveIds = products.map(p => p._id);
       const topUp = await Product.find({
-        isActive: true, _id: { $nin: [...haveIds, ...excludeIds] }, isFeatured: true,
+        isActive: { $ne: false }, _id: { $nin: [...haveIds, ...excludeIds] }, isFeatured: true,
         ...(buyerType === 'local' ? { availableForLocal: { $ne: false } } : {}),
         ...(buyerType === 'international' ? { availableForInternational: { $ne: false } } : {}),
       }).populate('category', 'name slug').limit(limit - products.length).lean();

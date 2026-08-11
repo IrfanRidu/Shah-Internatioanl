@@ -12,6 +12,11 @@ import ExportCategory from '@/models/ExportCategory';
 import ExportLicense from '@/models/ExportLicense';
 import { cascadeRecomputeShipments } from '@/lib/incentiveServer';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // R13: "From this tab Claimed applications only can be unclaimed and viewed" — the only mutation
 // available on a claimed application. Reverses claim(): member shipments go back to 'active' (so
 // they leave Export Archive and become editable again), and the frozen live rate is cleared — if no

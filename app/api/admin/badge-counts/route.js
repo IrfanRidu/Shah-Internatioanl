@@ -5,6 +5,11 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Conversation from '@/models/Conversation';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // Cheap, admin-only counts used to keep the sidebar/notification badges live without a full page
 // reload (issue 40) — Next.js doesn't re-run a server layout on client-side sibling navigation, so a
 // badge computed only in app/admin/layout.jsx would otherwise stay stale until a hard refresh even

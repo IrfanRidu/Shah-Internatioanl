@@ -14,6 +14,11 @@ import { calculateShipmentFinancials } from '@/lib/utils';
 import { resolveEffectiveRateBDT } from '@/lib/incentiveUtils';
 import { fetchLiveRates, STATIC_FALLBACK } from '@/lib/exchangeRates';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // Issue 47: convert a BDT amount into the selected base currency using live market rates (never a
 // hardcoded ratio). `rates` is USD-based (rates.USD === 1); BDT→base = amountBDT / rates.BDT * rates[base].
 function toBaseCurrency(amountBDT, baseCurrency, rates) {

@@ -148,7 +148,11 @@ export default function AdminProductsPage() {
                           </div>
                           <div className="min-w-0">
                             <p className="font-semibold text-gray-900 dark:text-white text-sm truncate max-w-[150px]">{p.name}</p>
-                            {p.scientificName && <p className="text-xs text-gray-400 italic truncate">{p.scientificName}</p>}
+                            {(p.scientificName || p.localName) && (
+                              <p className="text-xs text-gray-400 italic truncate">
+                                {[p.scientificName, p.localName].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
                             <div className="flex gap-1 mt-0.5">
                               {p.isFeatured && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">⭐</span>}
                               {p.isOrganic && <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">🌿</span>}

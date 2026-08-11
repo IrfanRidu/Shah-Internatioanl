@@ -195,4 +195,31 @@ describe('buildProductQuery', () => {
     expect(re.test('C.O.D Delivery')).toBe(true);
     expect(re.test('CXOXD Delivery')).toBe(false); // '.' must match a literal dot, not "any character"
   });
+
+  it('search matches against name, scientificName, localName, description, and tags', () => {
+    const query = buildProductQuery({ search: 'korola' });
+    const fields = query.$or.map(clause => Object.keys(clause)[0]);
+    expect(fields).toEqual(['name', 'scientificName', 'localName', 'description', 'tags']);
+  });
+
+  it('adminView skips isActive and buyerType visibility restrictions', () => {
+    // adminView is for the admin product management list, which must show inactive products and
+    // products restricted to one buyer type too — not just what a shopper would see.
+    expect(buildProductQuery({ adminView: true })).toEqual({});
+    expect(buildProductQuery({ adminView: true, buyerType: 'local' })).toEqual({});
+  });
+
+  it('adminView still applies category and search — this is the actual bug that was fixed', () => {
+    // Previously /api/products swapped in a bare `{}` for the whole query whenever adminView was
+    // set, instead of calling buildProductQuery at all — which meant the admin product list's
+    // search box and category filter were silently ignored: typing a search term re-fetched, but
+    // every fetch returned the exact same full list. adminView must only lift the *visibility*
+    // restrictions (isActive / availableForLocal / availableForInternational), never the filters
+    // the admin actually typed in.
+    expect(buildProductQuery({ adminView: true, category: 'veg123' })).toEqual({ category: 'veg123' });
+    const query = buildProductQuery({ adminView: true, search: 'korola' });
+    expect(query.isActive).toBeUndefined();
+    expect(query.$or).toBeDefined();
+    expect(query.$or.map(c => Object.keys(c)[0])).toEqual(['name', 'scientificName', 'localName', 'description', 'tags']);
+  });
 });

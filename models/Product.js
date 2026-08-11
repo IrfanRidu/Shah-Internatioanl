@@ -18,6 +18,11 @@ const NutritionalInfoSchema = new mongoose.Schema({
 const ProductSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   scientificName: { type: String, trim: true },
+  // Local/common/regional name (e.g. Bengali name) — a third naming field alongside Product Name
+  // and Botanical Name. Purely descriptive + searchable; nothing auto-fills FROM it (unlike
+  // scientificName → botanicalName in the Shipment Details product table), it's just another
+  // field every product search (storefront + admin + shipment picker) matches against.
+  localName: { type: String, trim: true },
   // Batch 7 — optional HS (Harmonized System) customs code. When set, auto-fills a shipment item's
   // hsCode the moment this product is picked in the Shipment Details product table (same
   // auto-fill-then-editable pattern as scientificName → botanicalName below).
@@ -70,7 +75,10 @@ const ProductSchema = new mongoose.Schema({
   availableForInternational: { type: Boolean, default: true },
 }, { timestamps: true });
 
-ProductSchema.index({ name: 'text', description: 'text', tags: 'text' });
+// Kept in sync with buildProductQuery's regex search fields (name, scientificName, localName,
+// tags) even though the app's actual search path is regex-based, not $text-based — this index is
+// otherwise unused today but should stay truthful to what "searchable" means for this schema.
+ProductSchema.index({ name: 'text', scientificName: 'text', localName: 'text', description: 'text', tags: 'text' });
 ProductSchema.index({ category: 1, isActive: 1 });
 ProductSchema.index({ isFeatured: 1, isActive: 1 });
 ProductSchema.index({ harvestingMonths: 1 });

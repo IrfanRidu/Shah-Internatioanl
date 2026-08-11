@@ -17,6 +17,11 @@ import ExportContract from '@/models/ExportContract';
 import { recordAuditLog } from '@/lib/exportAudit';
 import { calculateShipmentFinancials, sanitizeObjectIdFields } from '@/lib/utils';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // ObjectId-reference fields on ExportShipment that an unset <select> can send as '' — see
 // sanitizeObjectIdFields's own comment in lib/utils.js for why this matters.
 const OBJECT_ID_FIELDS = ['exportLicense', 'exportCategory', 'bankAccount', 'buyer', 'country', 'exportContract'];

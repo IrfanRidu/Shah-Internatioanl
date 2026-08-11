@@ -19,6 +19,11 @@ import { calculateShipmentFinancials, sanitizeObjectIdFields } from '@/lib/utils
 import { resolveEffectiveRateBDT, isRateOverrideActive, isShipmentLockedByIncentive } from '@/lib/incentiveUtils';
 import { recalculateGroupIfPending } from '@/lib/incentiveServer';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 const OBJECT_ID_FIELDS = ['exportLicense', 'exportCategory', 'bankAccount', 'buyer', 'country', 'exportContract'];
 
 const guard = async () => { const s = await getServerSession(authOptions); return ['superAdmin','admin'].includes(s?.user?.role); };

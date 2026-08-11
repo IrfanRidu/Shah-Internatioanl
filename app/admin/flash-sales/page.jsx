@@ -10,20 +10,46 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
 // ─── DateTimePicker with explicit OK confirmation button ───────────────────
+// Issue 2 (R26): reads/writes real, timezone-aware Date values now — was building a plain
+// "YYYY-MM-DDTHH:mm" string with no timezone info at all and sending that straight to the server.
+// A string like that gets interpreted as local time IN WHATEVER TIMEZONE PARSES IT, not the
+// timezone it was written in — and since this app's server runs in UTC (Vercel's Node runtime)
+// while this business operates from Bangladesh (UTC+6), a campaign an admin set to start "right
+// now" was actually being stored as 6 hours later than intended, so `startTime <= now` wouldn't
+// pass server-side (see the FlashSale queries above) until 6 real hours after it was created —
+// exactly why a freshly-created, supposedly-active campaign wouldn't show up on the site at all
+// for hours. Fixed by using the browser's own local-time Date constructor when writing
+// (interprets the picked y/m/d/h/m in the admin's actual timezone, then normalizes to a proper
+// UTC-aware ISO string via toISOString(), which resolves to the same absolute moment no matter
+// where it's later parsed) and the Date object's own local getters when reading back for display
+// (not slicing the raw ISO string, which is always UTC and would show the wrong time back to an
+// admin outside UTC+0).
+function toLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function toLocalTimeStr(d) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 function DateTimePicker({ label, value, onChange }) {
-  const [date, setDate] = useState(value ? value.slice(0, 10) : '');
-  const [time, setTime] = useState(value ? value.slice(11, 16) : '00:00');
+  const initial = value ? new Date(value) : null;
+  const [date, setDate] = useState(initial ? toLocalDateStr(initial) : '');
+  const [time, setTime] = useState(initial ? toLocalTimeStr(initial) : '00:00');
   const [confirmed, setConfirmed] = useState(!!value);
 
   useEffect(() => {
-    setDate(value ? value.slice(0, 10) : '');
-    setTime(value ? value.slice(11, 16) : '00:00');
+    const d = value ? new Date(value) : null;
+    setDate(d ? toLocalDateStr(d) : '');
+    setTime(d ? toLocalTimeStr(d) : '00:00');
     setConfirmed(!!value);
   }, [value]);
 
   const handleConfirm = () => {
     if (!date) { toast.error(`Pick a date for ${label}`); return; }
-    onChange(`${date}T${time || '00:00'}`);
+    const [y, m, day] = date.split('-').map(Number);
+    const [hh, mm] = (time || '00:00').split(':').map(Number);
+    // new Date(y, m-1, day, hh, mm) interprets these fields as LOCAL time in the browser running
+    // this code (the admin's own timezone) — exactly matching what they see in the pickers below.
+    onChange(new Date(y, m - 1, day, hh, mm).toISOString());
     setConfirmed(true);
     toast.success(`${label} set ✓`);
   };
@@ -116,8 +142,13 @@ export default function AdminCampaignsPage() {
     setEdit(s);
     setForm({
       ...EMPTY_FORM, ...s,
-      startTime: s.startTime ? new Date(s.startTime).toISOString().slice(0, 16) : '',
-      endTime: s.endTime ? new Date(s.endTime).toISOString().slice(0, 16) : '',
+      // Pass the real stored value straight through — DateTimePicker itself now converts to/from
+      // the admin's own local time correctly (see its own comment). Previously this pre-converted
+      // via .toISOString().slice(0,16), which strips the "Z" and leaves a naive UTC-valued string
+      // that DateTimePicker would then (correctly, per its own new local-time handling) interpret
+      // AS local time — silently reintroducing the same timezone bug on every re-edit.
+      startTime: s.startTime || '',
+      endTime: s.endTime || '',
       items: (s.items || []).map(i => ({ product: i.product?._id || i.product, productName: i.product?.name || i.productName, salePrice: i.salePrice, discountPercentage: i.discountPercentage })),
     });
     setModal(true);

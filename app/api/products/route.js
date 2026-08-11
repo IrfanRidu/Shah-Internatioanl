@@ -8,6 +8,11 @@ import { generateSlug, buildProductQuery, paginateQuery, computeHarvestingSeason
 import { hasPermission, isAdminRole } from '@/lib/permissions';
 import { syncHarvestingSeasonStatus } from '@/lib/harvestSeason';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     await connectDB();
@@ -32,7 +37,11 @@ export async function GET(request) {
     const session = await getServerSession(authOptions);
     const isAdmin = isAdminRole(session);
 
-    const query = adminView && isAdmin ? {} : buildProductQuery({ category, subcategory, buyerType, search, isFeatured, isHarvesting, allowPreOrder });
+    // adminView is only honored when the SERVER-VERIFIED session is actually an admin — a client
+    // simply passing ?adminView=true can't itself unlock unrestricted visibility. See
+    // buildProductQuery's own comment for why this must still flow through that one function
+    // (rather than swapping in a bare `{}`) so search/category keep working in admin view too.
+    const query = buildProductQuery({ category, subcategory, buyerType, search, isFeatured, isHarvesting, allowPreOrder, adminView: !!(adminView && isAdmin) });
     const { skip, limit: lim } = paginateQuery(page, limit);
 
     // Seasonal products first, then by requested sort

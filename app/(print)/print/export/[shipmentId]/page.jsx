@@ -3,6 +3,15 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { generateShipmentDocPDF, docTypeLabel, resolveDocumentText } from '@/lib/exportDocuments';
 import { getDocumentColumns, shouldShowBdHsCode, columnHeaderLabel, avgPrice } from '@/lib/exportColumns';
+import { LETTERHEAD_CONTENT_START_MM } from '@/lib/pdfLetterhead';
+
+// This print container's own top padding (12mm, matching where it's set further down) stacks
+// underneath DocHeader's spacer div (a normal-flow element, unlike its absolutely-positioned image,
+// which ignores the container's padding entirely per how CSS resolves an absolute element's
+// containing block) — subtracted from the spacer's own height so the two together land content at
+// the SAME 45mm-from-the-printable-area's-own-top-edge the PDF generator uses, not 12mm further
+// down than that.
+const CONTAINER_PADDING_MM = 12;
 
 // ─── Shared plain/formal styling — batch 7: the previous dark-header / colored-row / coded-banner
 // look did not match the reference documents at all (Packing_List.pdf, Buyer_s_Invoice_.pdf,
@@ -17,6 +26,22 @@ const TD = { padding: '4px', border: '1px solid #000' };
 const TDC = { ...TD, textAlign: 'center' };
 const SUMMARY_LINE = { fontSize: '10px', marginTop: '8px', padding: '5px 6px', border: '1px solid #000' };
 const DECLARATION_STYLE = { fontSize: '9px', marginTop: '8px', lineHeight: '1.5', border: '1px solid #000', padding: '8px' };
+// Wraps every piece of a document's actual content (title/InfoGrid/table/summary/declaration —
+// everything EXCEPT DocHeader's own image+spacer) so it reliably paints ABOVE the letterhead image
+// rather than being covered by it. Per CSS's default stacking order, a `position: absolute` element
+// (DocHeader's <img>, z-index:auto) always paints above normal-flow/static siblings in the same
+// stacking context, REGARDLESS of DOM order — so on any shipment whose uploaded letterhead happens
+// to render taller than the fixed clearance the spacer reserves (LETTERHEAD_CONTENT_START_MM), the
+// image was visually covering all of this instead of the other way around: "blank, only the empty
+// letterhead is showing" was every one of these elements still being there in the DOM, just hidden
+// underneath the image in paint order. Any element with an explicit positive z-index paints above a
+// z-index:auto sibling unconditionally, so z-index:1 here (matched against the image's implicit
+// auto/0) is enough — this doesn't need to coordinate with exactly which ancestor establishes the
+// actual stacking context, only that both are compared directly as siblings, which they are (both
+// are direct children of the position:relative print container in PrintPage below). Mirrors what
+// FIX A (PLAIN_TABLE_STYLE's fillColor:false) does for the downloaded PDF: the letterhead stays
+// fully visible everywhere, with only text and the table's own grid lines drawn on top of it.
+const CONTENT_LAYER_STYLE = { position: 'relative', zIndex: 1 };
 
 // Same rendering logic as the admin editor's ReadOnlyItemsView (lib/exportColumns.js's registry is
 // the shared source of truth) — kept local here since jsPDF and React/HTML need separate renderers,
@@ -54,23 +79,31 @@ function renderGrandCell(key, grand) {
 // Shared header for all documents. Letterhead comes from the shipment's Export License if it has
 // one, else the GLOBAL company setting (issue 39, requirement 7) — resolved by the caller, this
 // component just renders whatever URL it's given.
-// Issue 9 (R24) / issue 2 (R25): matches the downloaded PDF's own letterhead handling exactly now
-// (lib/pdfLetterhead.js) — the uploaded image is trusted at its own natural aspect ratio, full
-// width, no banner-shape restriction and no coded fallback of any kind. `plain` mode remains exactly
-// that: no banner or graphic of any kind above the title, per the reference documents.
+// Issue 9 (R24) / issue 2 (R25) / issue 1 (R26): matches the downloaded PDF's own letterhead
+// handling exactly now (lib/pdfLetterhead.js) — the uploaded image is trusted at its own natural
+// aspect ratio, full width, never cropped or distorted. Positioned absolutely (out of normal
+// document flow) so its own rendered height can never push the rest of the page's content down, or
+// affect print pagination — a real admin's actual uploaded letterhead was measured to render far
+// taller (~80mm, mostly blank padding baked into the file) than its visible graphic (~20mm), and
+// with the image previously sitting in normal flow, that reserved space was both an oversized gap
+// AND, combined with everything after it, enough to push the whole rest of the page onto a second
+// printed page. The spacer below reserves a small FIXED clearance instead (same constant the PDF
+// generator uses, so print and download match exactly) — content now starts at a predictable
+// position regardless of how tall the uploaded file itself happens to be.
 function DocHeader({ letterheadUrl, exporterInfo, plain, onLetterheadLoad }) {
   if (plain) return null;
   if (!letterheadUrl) return null;
   return (
-    <div className="header">
+    <>
       <img
         src={letterheadUrl}
         alt="Letterhead"
-        style={{ width: '100%', height: 'auto', display: 'block', marginBottom: '16px' }}
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 'auto', display: 'block' }}
         onLoad={onLetterheadLoad}
         onError={onLetterheadLoad}
       />
-    </div>
+      <div style={{ height: `${LETTERHEAD_CONTENT_START_MM - CONTAINER_PADDING_MM}mm` }} />
+    </>
   );
 }
 
@@ -135,6 +168,7 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
   return (
     <>
       <DocHeader letterheadUrl={letterheadUrl} exporterInfo={exporterInfo} plain={plain} onLetterheadLoad={onLetterheadLoad} />
+      <div style={CONTENT_LAYER_STYLE}>
       <h2 style={TITLE_STYLE}>Packing List</h2>
       <InfoGrid shipment={shipment} buyer={buyer} exporterInfo={exporterInfo} />
 
@@ -171,6 +205,7 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
         <b>Net Weight: {shipment.totalNetWeightKg} KG</b><br />
         <b>Gross Weight: {shipment.totalGrossWeightKg} KG</b>
       </div>
+      </div>
     </>
   );
 }
@@ -193,6 +228,7 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
   return (
     <>
       <DocHeader letterheadUrl={letterheadUrl} exporterInfo={exporterInfo} plain={plain} onLetterheadLoad={onLetterheadLoad} />
+      <div style={CONTENT_LAYER_STYLE}>
       <h2 style={TITLE_STYLE}>Commercial Invoice</h2>
       <InfoGrid shipment={shipment} buyer={buyer} exporterInfo={exporterInfo} />
 
@@ -232,6 +268,7 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
         <b>Total Carton: {grand.totalCTN} CTN</b><br />
         <b>Net Weight: {shipment.totalNetWeightKg} KG</b><br />
         <b>Gross Weight: {shipment.totalGrossWeightKg} KG</b>
+      </div>
       </div>
     </>
   );
@@ -331,8 +368,9 @@ export default function PrintPage() {
       </div>
 
       {/* A4 document — the ONLY thing that ever gets printed/downloaded, no site UI is reachable
-          from this route at all (see app/(print)/layout.jsx) */}
-      <div style={{ maxWidth: '210mm', margin: '0 auto', padding: '12mm', backgroundColor: 'white', minHeight: '297mm' }}>
+          from this route at all (see app/(print)/layout.jsx). position:relative anchors DocHeader's
+          absolutely-positioned letterhead image to this box specifically (not the whole page). */}
+      <div style={{ maxWidth: '210mm', margin: '0 auto', padding: `${CONTAINER_PADDING_MM}mm`, backgroundColor: 'white', minHeight: '297mm', position: 'relative' }}>
         {baseDocType === 'packing' && <PackingListDoc shipment={shipment} buyer={buyer} letterheadUrl={letterheadUrl} exporterInfo={exporterInfo} plain={!withLetterhead} onLetterheadLoad={triggerPrintWhenReady} />}
         {(baseDocType === 'buyer-invoice' || baseDocType === 'bd-invoice') && (
           <InvoiceDoc shipment={shipment} buyer={buyer} letterheadUrl={letterheadUrl} exporterInfo={exporterInfo} plain={!withLetterhead} type={baseDocType} onLetterheadLoad={triggerPrintWhenReady} />

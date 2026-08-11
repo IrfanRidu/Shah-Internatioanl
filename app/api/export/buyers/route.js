@@ -8,6 +8,11 @@ import ExportBuyer from '@/models/ExportBuyer';
 import ExportCountry from '@/models/ExportCountry';
 import { recordAuditLog } from '@/lib/exportAudit';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     // Exposes buyer contact/address/banking-relevant info — must be admin-only, matching the guard

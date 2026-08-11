@@ -690,7 +690,165 @@ the 2 mixed PDF-or-image uploaders handling each file type appropriately (images
 through as before — resizing a PDF client-side isn't a small addition, flagged as a smaller remaining
 gap rather than solved). Confirmed zero unresized image upload call sites remain anywhere in the app.
 
-## 20. Setup Reminder
+## 20. Batch 12 — Letterhead Gap/2-Page Print Fix, Missing Campaigns Root-Caused (R26)
+
+Full detail lives in `AGENT_PROGRESS_12.md`. Direct feedback on batch 11's own output plus one
+freshly reported, previously-unmentioned bug (campaigns/flash-sales not appearing on the site).
+
+**The letterhead gap and the print view's 2-page problem shared one root cause, confirmed by
+measuring an actual downloaded PDF pixel-by-pixel rather than estimating**: the real uploaded
+letterhead's visible banner graphic is only ~20mm tall, but the image FILE's own aspect ratio
+renders to ~80mm at full page width — it has a lot of blank space baked into the file well past its
+visible content. `lib/pdfLetterhead.js` was reserving content-start space proportional to that FULL
+rendered height (capped 38-90mm), which is why content was starting ~66mm too low. Replaced with a
+single fixed constant (`LETTERHEAD_CONTENT_START_MM = 45`, exported as the one shared source of
+truth) — content now starts a predictable ~1 inch past a typical banner's own height, regardless of
+how much blank padding an uploaded file happens to carry beyond it; the image itself is still always
+drawn at its own full, undistorted size underneath. The PDF side needed no further changes (`draw-
+Header` already just forwards whatever this module returns). The print view had a compounding
+second bug: its letterhead `<img>` was a normal-flow element, so that same ~80mm render height was
+physically pushing all following content down by that amount in the page's real layout, and with
+everything shifted that far, the whole document no longer fit on one printed page — fixed by making
+the image `position: absolute` (out of flow, can't affect pagination) with a small fixed spacer
+using the same shared constant, landing print and PDF at the same effective content-start position
+(worked through the CSS containing-block math for an absolutely-positioned percentage width/an
+absolutely-positioned element ignoring its ancestor's padding specifically, rather than assuming).
+
+**Campaigns not appearing — two separate, real bugs, both fixed:**
+1. The same `isActive: true` exact-match bug already fixed once for the Product catalog (search
+   round) turned up again in 3 separate FlashSale queries (homepage, product-detail campaign strip,
+   the flash-sales API route) — all switched to `{ $ne: false }`, matching the established pattern.
+2. A genuine timezone bug in the admin Campaigns page: its date/time picker built a plain, timezone-
+   naive datetime string and sent it straight to the server. Since this server runs in UTC (Vercel)
+   while the business operates from Bangladesh (UTC+6), an admin picking "start now" was unknowingly
+   storing a start time 6 real hours in the future from the server's perspective — a very plausible,
+   direct explanation for a freshly-created campaign not showing up for hours. Fixed by constructing
+   a real local `Date` (interpreted in the admin's own browser timezone) and normalizing with
+   `.toISOString()` before sending; fixed the same picker's read-back path to use the `Date`
+   object's own local getters rather than slicing an always-UTC ISO string; and found + fixed a
+   third related bug this uncovered — the edit-population code was ALSO pre-converting via
+   `.toISOString().slice(0,16)` before handing off to the picker, which would have made the now-
+   correct picker misinterpret an already-UTC value as local time all over again on every re-edit.
+
+## 21. Batch 13 — Letterhead Watermark Layering, Campaign Price Populate Gap, Local Name Field, Universal Search, Systemic Vercel Dynamic-Rendering Fix (R27)
+
+Full detail in AGENT_PROGRESS_13.md. Six reported issues, all root-caused with direct evidence
+(not pattern-matched to prior rounds) before any fix was written:
+
+**1. Packing List / BD Invoice / Buyer's Invoice: blank print preview, downloaded PDF content
+covering the letterhead.** Two independent bugs sharing one root cause — nothing previously stopped
+content from opaquely covering a letterhead image taller than the fixed 45mm content-start offset
+(LETTERHEAD_CONTENT_START_MM, unchanged by this fix — it was never actually the problem):
+  - Downloaded PDF: `PLAIN_TABLE_STYLE` in lib/exportDocuments.js set `fillColor:[255,255,255]`
+    (opaque white) on head/foot/alternate-row styles, and left bodyStyles/the table-wide `styles`
+    with no override at all — silently inheriting the same opaque white from the 'grid' theme's own
+    default. jsPDF draws sequentially like a canvas (letterhead drawn first, table after) — those
+    opaque cells painted directly over any part of the letterhead still visible below the table's
+    start position. Fixed: `fillColor: false` at every level (head/body/foot/alternate/table-wide),
+    which skips the fill draw call entirely rather than drawing white — confirmed via grep that
+    every other `doc.rect()` call in the file already had no fill (stroke-only by jsPDF's default),
+    so this was specifically and only the two `autoTable()` calls.
+  - Print preview: DocHeader's `<img>` is `position:absolute` with no z-index; everything else
+    (title/InfoGrid/table/summary/declaration) is normal static flow. Per CSS's default stacking
+    order, a positioned element paints ABOVE static siblings regardless of DOM order — so wherever
+    the (opaque) letterhead image rendered taller than the fixed offset, it visually covered
+    everything underneath it, reading as "blank, only the letterhead is showing." Fixed by wrapping
+    all post-DocHeader content in a new `CONTENT_LAYER_STYLE = {position:'relative', zIndex:1}` div
+    in both PackingListDoc and InvoiceDoc — any explicit positive z-index sibling paints above a
+    z-index:auto one unconditionally.
+  - This CSS fix was empirically verified, not just reasoned about: built a minimal faithful
+    reproduction (position:relative container + oversized position:absolute rect simulating a tall
+    letterhead + real DocHeader spacer math + content once without and once with the fix), rendered
+    it with the locally-available Playwright/Chromium binary (no network needed — the browser was
+    already installed in this sandbox), and screenshotted both. The "before" render exactly
+    reproduced the reported bug (title/table 100% invisible under the banner); the "after" render
+    confirmed the fix (identical content clearly visible on top of the still-fully-visible banner).
+  - Confirmed out of scope / unaffected: Ka Form and Stamp Application (lib/kaFormDocuments.js) —
+    separate file, doesn't import pdfLetterhead.js, no letterhead-as-background involved. Also
+    confirmed lib/invoice.js (regular e-commerce order invoices, unrelated system with its own
+    synthesized colored header, no letterhead image at all) is unrelated.
+
+**2. International buyers saw campaign/flash-sale price as 0.** Not a discount-math bug —
+`getEffectivePricing` in lib/utils.js was already correct. Root cause: three separate Mongoose
+`.populate('items.product', ...)` calls that feed campaign product cards used field-selection
+projections missing `priceRangeMin`/`priceRangeMax` (one was missing almost every pricing field,
+including images/price/discountPrice too), so those fields were `undefined` on the populated
+product and `Number(undefined) || 0` always computed 0 regardless of discount status. Fixed all
+three: app/(shop)/page.jsx (homepage — brought in line with its own sibling SpecialSection populate
+four lines below, which already had the fields right), app/(shop)/products/[slug]/page.jsx (product
+detail page's campaign strip — replaced a hand-rolled select with the file's own existing
+`CARD_FIELDS` constant so it can't drift out of sync again), and app/api/flash-sales/route.js (the
+standalone API route, reachable via ActiveCampaignsStrip.jsx's self-fetch fallback).
+
+**3. Added a Local Name field** (alongside Product Name and Botanical Name) — `models/Product.js`
+schema, the shared admin create/edit form (app/admin/products/new/page.jsx, exported as
+`ProductForm` and reused by app/admin/products/[id]/page.jsx), and display everywhere Botanical
+Name was already shown (ProductMultiSelect, ProductNameCombobox, the shipment page's product
+picker, the admin products table, the storefront product detail page) using a consistent
+`[scientificName, localName].filter(Boolean).join(' · ')` pattern. translations/{en,bn,ar}.js
+already had a correct `localName` key from earlier scaffolding — nothing to change there.
+scripts/seed.js's standalone schema also already had the field declared but no demo values; added
+real values to 11 of 12 seed products (reusing the local name already embedded in several products'
+own `name` field, e.g. "Bitter Gourd (Karela)" → `localName: 'Karela'`, plus well-established common
+Bengali names for the rest).
+
+**4 & 5. Universal product search (storefront + admin + shipment picker) now matches local name,
+product name, botanical name, and tags.** Found all THREE real search implementations in the
+codebase and fixed each: `buildProductQuery` in lib/utils.js (shared by the main catalog, admin
+product list, and — this is what folded issue 5 in for free — both shipment-page product pickers,
+since they all call `/api/products?search=`), and the standalone `/api/products/search/route.js`
+(storefront header autocomplete) which also had unescaped regex (a `(` in a botanical name search
+would throw, caught as a 500) and the stricter `isActive:true` bug — both fixed to match the
+established `$ne:false` + `escapeRegex` conventions. Confirmed the shipment picker's existing
+Product Name → Botanical Name autofill-on-select was already correct and needed no changes.
+  - Found and fixed a genuine standing bug while here: `app/api/products/route.js` swapped in a
+    bare `{}` query whenever `adminView=true`, discarding search/category filtering entirely — the
+    admin product list's search box had apparently never actually filtered anything. Refactored
+    `buildProductQuery` to accept `filters.adminView`, which now correctly skips only the
+    visibility restrictions (isActive/availableForLocal/availableForInternational) while still
+    applying category/search — real product-visible query building.  Updated
+    tests/unit/utils.test.js (existing real vitest suite — confirmed it can't actually be run in
+    this sandbox, no node_modules/no network, but kept it consistent and extended with 3 new cases
+    documenting the localName search field and the adminView fix).
+  - Same-class opportunistic fixes applied while directly in this territory (all product-domain,
+    all the identical `isActive:true` → `{$ne:false}` pattern already established everywhere else):
+    app/api/products/best-selling/route.js, app/api/products/recommended/route.js (both instances),
+    and app/api/admin/metrics/route.js's active-product count (already a touched file this round).
+    Also fixed unescaped regex in app/api/users/route.js's admin search (crash-safety only, doesn't
+    change matching semantics). Deliberately did NOT extend the `isActive:true` sweep into Coupons/
+    Categories/Special Sections/Banners/Pages/Notifications — different domains, not part of any of
+    the 6 reported issues, and some (Coupons especially) carry business-logic judgment calls about
+    legacy documents that shouldn't be made unilaterally.
+
+**6. Vercel deployment errors — systemic root cause, not three separate bugs.**
+`getServerSession()` internally calls `headers()`; 67 of 79 API routes called it without declaring
+`export const dynamic = 'force-dynamic'`, so Next.js's build/render pipeline attempted to
+statically evaluate them, `headers()` threw its internal `DynamicServerError` (digest
+`DYNAMIC_SERVER_USAGE`) as a control-flow signal meant for Next's OWN machinery to catch — but
+every one of these routes wraps its logic in `try/catch`, which intercepted that signal first and
+turned it into a real, user-facing 500. This is exactly the reported `/api/admin/metrics` stack
+trace. 9 more routes (including `/api/currency`) had neither session code nor the dynamic export —
+same risk via the same mechanism, most likely why currency 500'd consistently (a build-time
+static-evaluation attempt with the DB unreachable from the build step would bake a 500 response in
+as the "static" output, permanently, until redeploy). Fixed by adding
+`export const dynamic = 'force-dynamic'` to all 76 affected routes (verified 79/79 route.js files
+now correctly configured, zero duplicates). The generic "Something Went Wrong" Server Components
+error had no independent stack trace to chase — most likely a knock-on symptom of the above, flagged
+to confirm after redeploy rather than conclusively closed on static analysis alone.
+
+**Verification approach this round:** no network access in this sandbox (confirmed, same constraint
+every prior round faced) — couldn't run `npm install`/`next build`/`next dev`/the real vitest suite.
+Used the established `tsc --noEmit --allowJs --checkJs --jsx preserve --noResolve --skipLibCheck`
+syntax/reference check (catches TS2304/TS2552/TS2551 — undefined names/typos — while ignoring
+type-mismatch noise from unresolved imports) across every one of the 90 files touched this round,
+individually as each was edited and again as one final consolidated pass; the only hit was a single,
+already-known, pre-existing `Buffer` Node-global false positive unrelated to any edit. Additionally,
+for the one fix resting on a genuinely subtle mechanism (CSS stacking order, not simple/documented
+library API behavior) — the print-preview letterhead fix — went beyond static analysis and
+empirically confirmed it with a real headless-Chromium render via the locally-available Playwright
+install, reproducing the exact reported bug and confirming the fix resolves it (see issue 1 above).
+
+## 22. Setup Reminder
 
 ```bash
 npm install

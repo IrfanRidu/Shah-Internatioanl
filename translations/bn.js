@@ -74,6 +74,7 @@ const bn = {
     offSeason: 'অফ সিজন',
     viewDetails: 'বিস্তারিত দেখুন',
     scientificName: 'বৈজ্ঞানিক নাম',
+    localName: 'স্থানীয় নাম',
     origin: 'উৎপত্তিস্থল',
     location: 'ফসল কাটার স্থান',
     season: 'ফসল কাটার মৌসুম',

@@ -53,7 +53,7 @@ export function ProductForm({ initialData = {}, productId = null }) {
   const [uploading, setUploading] = useState(false);
   const [syncingFx, setSyncingFx] = useState(false);
   const [form, setForm] = useState({
-    name: '', scientificName: '', hsCode: '', description: '', shortDescription: '',
+    name: '', scientificName: '', localName: '', hsCode: '', description: '', shortDescription: '',
     category: '', subcategorySlug: '',
     price: '', discountPrice: '', priceRangeMin: '', priceRangeMax: '', productCost: '',
     quantity: '', unit: 'kg', minimumOrderQuantity: '1',
@@ -214,6 +214,7 @@ export function ProductForm({ initialData = {}, productId = null }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input label="Product Name" required placeholder="e.g. Bitter Gourd" value={form.name} onChange={e => set('name', e.target.value)} />
           <Input label="Botanical Name" placeholder="e.g. Momordica charantia" value={form.scientificName} onChange={e => set('scientificName', e.target.value)} />
+          <Input label="Local Name" placeholder="e.g. Korola" hint="Optional — common/regional name (e.g. Bengali), searchable everywhere Product Name is" value={form.localName} onChange={e => set('localName', e.target.value)} />
           <Input label="HS Code" placeholder="e.g. 07099090" hint="Optional — customs code, auto-fills onto Export Dashboard shipments when this product is picked" value={form.hsCode} onChange={e => set('hsCode', e.target.value)} />
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Description <span className="text-red-500">*</span></label>

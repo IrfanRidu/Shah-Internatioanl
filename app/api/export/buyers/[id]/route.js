@@ -7,6 +7,11 @@ import ExportBuyer from '@/models/ExportBuyer';
 import ExportCountry from '@/models/ExportCountry';
 import { recordAuditLog, moveToRecycleBin } from '@/lib/exportAudit';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 const guard = async () => { const s = await getServerSession(authOptions); return ['superAdmin','admin'].includes(s?.user?.role); };
 const getSession = () => getServerSession(authOptions);
 

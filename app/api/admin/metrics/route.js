@@ -9,6 +9,11 @@ import CurrencyRate from '@/models/CurrencyRate';
 import { hasPermission } from '@/lib/permissions';
 import { fetchLiveRates, STATIC_FALLBACK } from '@/lib/exchangeRates';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // How stale a cached rate can be before we bother refreshing — same threshold /api/currency uses, so
 // this stays consistent with the rates shown anywhere else on the site.
 const STALE_AFTER_MS = 30 * 60 * 1000;
@@ -70,7 +75,10 @@ export async function GET(request) {
       User.countDocuments({ buyerType: 'local' }),
       User.countDocuments({ buyerType: 'international' }),
       Product.countDocuments(),
-      Product.countDocuments({ isActive: true }),
+      // $ne:false, not ===true — a product missing the field entirely (predates it, or was
+      // inserted outside the normal create flow) is still active; this dashboard stat shouldn't
+      // undercount for the same reason products shouldn't vanish from search over it.
+      Product.countDocuments({ isActive: { $ne: false } }),
       Order.countDocuments({ status: 'processing' }),
       Order.countDocuments({ createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }),
       getCurrencyRates(),

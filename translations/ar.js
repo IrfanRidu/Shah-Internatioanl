@@ -72,6 +72,7 @@ const ar = {
     offSeason: 'خارج الموسم',
     viewDetails: 'عرض التفاصيل',
     scientificName: 'الاسم العلمي',
+    localName: 'الاسم المحلي',
     origin: 'بلد المنشأ',
     location: 'موقع الحصاد',
     season: 'موسم الحصاد',

@@ -72,8 +72,13 @@ export default async function ProductPage({ params }) {
   // campaigns above already used, and claim whichever product ends up displayed (the first remaining
   // item) so it can't ALSO turn up in Related/Recommended/Best-Selling further down the page.
   const now = new Date();
-  const activeSalesRaw = await FlashSale.find({ isActive: true, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
-    .populate({ path: 'items.product', select: 'name slug availableForLocal availableForInternational', match: buyerVisibilityQuery })
+  // isActive uses $ne:false, not ===true — see app/(shop)/page.jsx's identical query for the reasoning.
+  // select reuses CARD_FIELDS (not a hand-rolled subset) so it can never again silently drop a field
+  // PriceDisplay/getEffectivePricing needs — that's exactly how this used to omit price/discountPrice/
+  // priceRangeMin/priceRangeMax/images entirely and make every campaign product on this page show a
+  // $0/৳0 price with no photo.
+  const activeSalesRaw = await FlashSale.find({ isActive: { $ne: false }, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
+    .populate({ path: 'items.product', select: CARD_FIELDS, match: buyerVisibilityQuery })
     .limit(6)
     .lean();
   const activeCampaigns = [];

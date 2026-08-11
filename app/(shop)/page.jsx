@@ -44,8 +44,17 @@ async function getHomeData() {
     // Previously this used FlashSale.findOne() (singular), which is why
     // only a single campaign could ever appear on the homepage even when
     // several were active and scheduled at once.
-    FlashSale.find({ isActive: true, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
-      .populate({ path: 'items.product', select: 'name images slug price discountPrice unit isHarvestingSeason availableForLocal availableForInternational', match: buyerVisibilityQuery })
+    // isActive uses $ne:false, not ===true — see lib/utils.js's buildProductQuery for the same
+    // reasoning: a campaign missing the field entirely (predates it, or was inserted outside the
+    // normal create flow) must still be findable, not silently excluded from ever appearing.
+    // select must include priceRangeMin/priceRangeMax (international USD range) — without them,
+    // getEffectivePricing() in lib/utils.js sees `product.priceRangeMin/Max` as undefined and
+    // computes both as 0, which is exactly why international buyers were seeing a $0 campaign
+    // price: this populate silently stripped the very fields that price is built from before
+    // PriceDisplay ever got a chance to render them. Kept in sync with the SpecialSection populate
+    // 4 lines below, which already selected them correctly.
+    FlashSale.find({ isActive: { $ne: false }, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
+      .populate({ path: 'items.product', select: 'name images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason availableForLocal availableForInternational', match: buyerVisibilityQuery })
       .sort({ createdAt: -1 })
       .lean(),
     SpecialSection.find({ isActive: true, position: { $in: ['home', 'both'] }, ...campaignAudienceQuery })

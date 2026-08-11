@@ -153,7 +153,11 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
 
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{product.name}</h1>
-            {product.scientificName && <p className="text-gray-400 italic text-sm mb-2">({product.scientificName})</p>}
+            {(product.scientificName || product.localName) && (
+              <p className="text-gray-400 italic text-sm mb-2">
+                ({[product.scientificName, product.localName].filter(Boolean).join(' · ')})
+              </p>
+            )}
             {/* Issue 6: organic-certified / featured badges live under the product name (not on the
                 image, which previously overlaid isOrganic in the top-right corner of the gallery). */}
             <div className="flex flex-wrap gap-2">

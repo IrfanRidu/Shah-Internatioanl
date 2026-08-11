@@ -98,7 +98,11 @@ export default function ProductMultiSelect({ value = [], onChange, placeholder =
                 className={`w-full text-left px-3 py-2 border-b border-gray-50 dark:border-gray-700 last:border-0 transition-colors ${already ? 'opacity-40 cursor-default' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               >
                 <p className="text-xs font-medium text-gray-900 dark:text-white">{p.name}{already ? ' (added)' : ''}</p>
-                {p.scientificName && <p className="text-[10px] text-gray-400 italic">{p.scientificName}</p>}
+                {(p.scientificName || p.localName) && (
+                  <p className="text-[10px] text-gray-400 italic">
+                    {[p.scientificName, p.localName].filter(Boolean).join(' · ')}
+                  </p>
+                )}
               </button>
             );
           })}

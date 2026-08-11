@@ -6,6 +6,11 @@ import User from '@/models/User';
 import { sendWelcomeEmail } from '@/lib/email';
 import { hasPermission, isAdminRole } from '@/lib/permissions';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
@@ -39,11 +44,18 @@ export async function GET(request) {
       query.role = roles.length === 1 ? roles[0] : { $in: roles };
     }
     if (buyerType) query.buyerType = buyerType;
-    if (search) query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { email: { $regex: search, $options: 'i' } },
-      { phone: { $regex: search, $options: 'i' } },
-    ];
+    // Regex-escaped, same reasoning as buildProductQuery in lib/utils.js: an unescaped '(' or other
+    // regex metacharacter in a name/email search (e.g. "O'Brien & Sons (Imports)") throws inside
+    // $regex, which this route's own catch-all below turns into a 500 — this admin search box
+    // should never crash on ordinary punctuation in a customer's name.
+    if (search) {
+      const safeSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.$or = [
+        { name: { $regex: safeSearch, $options: 'i' } },
+        { email: { $regex: safeSearch, $options: 'i' } },
+        { phone: { $regex: safeSearch, $options: 'i' } },
+      ];
+    }
 
     const total = await User.countDocuments(query);
     const users = await User.find(query)

@@ -119,7 +119,11 @@ function ProductSearch({ onSelect }) {
             <button key={p._id} onClick={() => { onSelect(p); setQuery(''); setOpen(false); }}
               className="w-full text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-50 dark:border-gray-700 last:border-0">
               <p className="text-sm font-medium text-gray-900 dark:text-white">{p.name}</p>
-              {p.scientificName && <p className="text-xs text-gray-400 italic">{p.scientificName}</p>}
+              {(p.scientificName || p.localName) && (
+                <p className="text-xs text-gray-400 italic">
+                  {[p.scientificName, p.localName].filter(Boolean).join(' · ')}
+                </p>
+              )}
             </button>
           ))}
         </div>

@@ -74,6 +74,7 @@ const en = {
     offSeason: 'Off Season',
     viewDetails: 'View Details',
     scientificName: 'Scientific Name',
+    localName: 'Local Name',
     origin: 'Country of Origin',
     location: 'Harvesting Location',
     season: 'Harvesting Season',

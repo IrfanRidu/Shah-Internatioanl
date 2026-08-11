@@ -8,6 +8,11 @@ import { hasPermission, isAdminRole } from '@/lib/permissions';
 import { computeHarvestingSeason } from '@/lib/utils';
 import { applyComputedHarvestSeason } from '@/lib/harvestSeason';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 export async function GET(request, { params }) {
   try {
     await connectDB();

@@ -6,6 +6,11 @@ import Order from '@/models/Order';
 import { hasPermission } from '@/lib/permissions';
 import { sendOrderStatusEmail } from '@/lib/email';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // Admin action: confirm (or reject) that a bKash/Nagad Transaction ID a
 // customer submitted actually matches a real payment received in the
 // store's mobile-banking account. This is the manual verification step

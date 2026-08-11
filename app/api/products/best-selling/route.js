@@ -3,6 +3,11 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Product from '@/models/Product';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // Public endpoint: real best-sellers computed from actual delivered order
 // line items (quantity sold), not a hardcoded or admin-picked list.
 export async function GET(request) {
@@ -22,7 +27,11 @@ export async function GET(request) {
     ]);
 
     const ids = topSellers.map(t => t._id).filter(id => !excludeIds.includes(String(id)));
-    const products = await Product.find({ _id: { $in: ids }, isActive: true })
+    // $ne:false, not ===true — see buildProductQuery's comment in lib/utils.js: a product missing
+    // the field entirely (predates it, or was inserted outside the normal create flow) must still
+    // be eligible to appear here, not silently dropped from Best Sellers just because it lacks a
+    // field that has nothing to do with whether it actually sold.
+    const products = await Product.find({ _id: { $in: ids }, isActive: { $ne: false } })
       .populate('category', 'name slug')
       .lean();
 

@@ -3,6 +3,11 @@ import connectDB from '@/lib/mongodb';
 import CurrencyRate from '@/models/CurrencyRate';
 import { fetchLiveRates, STATIC_FALLBACK } from '@/lib/exchangeRates';
 
+// Force dynamic rendering — this route reads live DB/session data on every request and
+// must never be statically cached/prerendered (prevents both stale data and the
+// DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
+export const dynamic = 'force-dynamic';
+
 // How long a cached rate is trusted before we try to refresh it from a live source again.
 // Real upstream providers (see lib/exchangeRates.js) only update once every hour-to-day anyway, so
 // 30 minutes keeps the site "live" without hammering free APIs on every page load.
