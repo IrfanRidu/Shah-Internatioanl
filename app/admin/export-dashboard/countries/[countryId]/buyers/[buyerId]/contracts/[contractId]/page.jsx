@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, FileText, Package, Tag, Trash2, FileSignature } from 'lucide-react';
+import { ArrowLeft, Plus, FileText, Package, Tag, Trash2, FileSignature, Pencil } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Loader from '@/components/ui/Loader';
 import Badge from '@/components/ui/Badge';
@@ -47,6 +47,23 @@ export default function ContractShipmentsPage() {
     const r = await fetch(`/api/export/shipments/${s._id}`, { method: 'DELETE' });
     const d = await r.json();
     if (d.success) { fetchData(); toast.success('Shipment deleted'); } else toast.error(d.message || 'Could not delete this shipment');
+  };
+
+  // Quick rename, right from the list — uses the dedicated shipmentNoOnly branch on the PUT route
+  // (see app/api/export/shipments/[id]/route.js) rather than the general save path, which does a
+  // full-document REPLACE and would need this list to hold an entire shipment's worth of data just
+  // to change one label.
+  const handleRename = async (s) => {
+    const next = window.prompt('Rename shipment', s.shipmentNo);
+    if (next === null) return; // cancelled
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === s.shipmentNo) return;
+    const r = await fetch(`/api/export/shipments/${s._id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shipmentNoOnly: trimmed }),
+    });
+    const d = await r.json();
+    if (d.success) { fetchData(); toast.success('Shipment renamed'); } else toast.error(d.message || 'Could not rename this shipment');
   };
 
   const statusColor = { draft: 'default', active: 'info', completed: 'success', archived: 'default' };
@@ -139,6 +156,9 @@ export default function ContractShipmentsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-bold text-gray-900 dark:text-white">{s.shipmentNo}</p>
+                    <button onClick={() => handleRename(s)} title="Rename shipment" className="p-1 rounded-lg text-gray-300 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     {s.invoiceNo && <span className="text-xs text-gray-400">Invoice: {s.invoiceNo}</span>}
                     <Badge variant={statusColor[s.status] || 'default'} className="text-xs capitalize">{s.status}</Badge>
                     {s.exportCategory?.name && <span className="text-xs font-medium text-purple-600 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-lg">{s.exportCategory.name}</span>}

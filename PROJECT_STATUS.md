@@ -848,7 +848,126 @@ library API behavior) — the print-preview letterhead fix — went beyond stati
 empirically confirmed it with a real headless-Chromium render via the locally-available Playwright
 install, reproducing the exact reported bug and confirming the fix resolves it (see issue 1 above).
 
-## 22. Setup Reminder
+## 22. Batch 14 — Declaration/Total-Carton Spacing, Bengali Ka Form Section E Column Split, Section A Spacing, Center-Alignment Sweep (R28)
+
+Full detail in AGENT_PROGRESS_14.md. Four reported issues, all against the v16 deliverable from
+Batch 13 (same conversation) — no new zip uploaded this round, worked directly against the existing
+project tree. Two new screenshots + a reference Ka Form PDF supplied evidence for three of the four.
+
+**1. Declaration text and "Total Carton" line touching in Packing List / BD Invoice / Buyer's
+Invoice.** A real arithmetic bug in lib/exportDocuments.js, not a subjective spacing preference:
+the declaration text was drawn with `doc.text(certLines, MARGIN+2, y+4)` (baseline 4mm below the
+box top), but the running `y` tracker used to position the NEXT line only added
+`certLines.length*3.5 + 3` — never accounting for that same `+4` offset the text was actually drawn
+at. For the common one-line-declaration case this put "Total Carton" under 1mm below the
+declaration's own visual bottom. Fixed in both `generatePackingListPDF` and the shared
+`generateInvoicePDF` (BD Invoice + Buyer's Invoice) by restoring the missing `+4` into the
+cumulative advance.
+
+**2. Bengali Ka Form Section E: EXP Number and Repatriated Value merged into one column.** The
+user-supplied reference PDF was rasterized and inspected column-by-column (150 then 300 DPI),
+confirming the Bengali original has these as genuinely separate columns, contradicting a Batch-9-
+era note that had concluded (from a different reference at the time) that Bengali only had room for
+6 merged columns. Fixed by extending Section E to 7 columns in both languages (SL, Description,
+Quantity, Invoice Value, Ship Date, EXP Number, Repatriated Value & Date) — kept the existing SL
+column since the user's complaint was specifically about the merge, not about matching the
+reference's exact column set. `sectionERowsBn` (a near-duplicate of `sectionERows` differing only by
+this now-corrected merge) was removed entirely rather than patched in place, since once fixed it
+became computationally identical to `sectionERows` — both language paths now share one function.
+The two new Bengali column headers were deliberately NOT hand-transcribed from the reference image
+(Bengali conjuncts are easy to mis-key from a raster scan) — instead assembled from phrase fragments
+already correctly typed and rendering elsewhere in this exact file (Section F's own header, Section
+H's caption), which also confirmed the file's own established two-word spacing convention for
+"বৈদেশিক মুদ্রায়". Could not be empirically rendered (no jspdf/node-canvas available locally, no
+network to install either) — confidence instead rests on exact structural verification (column-width
+sum = 1.0, matching array lengths across colW/head/body/foot/aligns) plus reuse of proven text
+fragments, a real but categorically weaker form of verification than an actual rendered screenshot.
+
+**3. Bengali Ka Form Section A: company name/address too close to its label.** Not the same bug
+class as issue 1 — `drawBengaliText` (lib/bengaliText.js) already correctly bakes a small gap into
+its own return value; this was a legitimate "needs more room" request, not broken math. Fixed by
+increasing the shared `sectionHeadingBn` helper's added gap (used by all 8 section headings, A-H,
+not just A) from +1.5mm to +3mm — total gap roughly 2.3mm → 3.8mm, negligible against the A3 page's
+available headroom.
+
+**4. All table headers and values across every PDF type should be center-aligned.** Surveyed every
+table in both generator files before touching anything: lib/exportDocuments.js has 2 `autoTable()`
+calls sharing one `PLAIN_TABLE_STYLE` object; lib/kaFormDocuments.js has 7 `autoTable()` calls
+sharing one `TABLE_STYLE` object, plus 5 `bnDrawGridTable()` calls each with their own `aligns`
+array (Sections C, D, E, F, H). Confirmed no per-column override anywhere in either file that could
+conflict with a single shared-object fix. Added `halign: 'center'` to both shared style objects
+(covers 9 of the 14 tables in one change each) and changed all 5 `aligns` arrays to all-`'center'`.
+Also fixed the HTML print-preview page's table styling for consistency — found `TH` (headers) was
+already centered by design but `TD` (the Name/Botanical/HS-code body cell) was left-aligned;
+centering the base `TD` constant fixed it without touching individual call sites.
+
+**Verification:** tsc clean across all 4 touched files, individually and as a final consolidated
+pass. DOCX/XLSX Ka Form output confirmed unaffected (already used `sectionERows`, unchanged by this
+round) — correctly out of scope, the user's report was explicitly PDF-specific throughout.
+
+## 23. Batch 15 — Vercel Error Investigation, Service Worker Staleness Fix, Shipment Rename, EXP No. Year Dedup, Per-Field EXP/AWB/PC Dates (R29)
+
+Full detail in AGENT_PROGRESS_15.md. Opened with a live-site investigation (5 screenshots: browser
+console, 3 Vercel dashboard panels, 1 reference photo) before any of the 3 new feature requests.
+
+**Vercel error investigation.** The same generic error from Batch 13's opening report was still
+occurring, alongside persisting `/api/currency` and `/api/settings` 500s. Confirmed via direct code
+read that both routes already have Batch 13's `force-dynamic` fix correctly in place, and ruled out
+every other code-level throw source reachable from either route (`fetchLiveRates()` is fully
+defensive — every provider call has its own try/catch, confirmed by direct read, matching its own
+"Never throws" doc comment; Settings' `required` fields are all inside array sub-schemas that don't
+validate on an empty first-create). With both routes' own code already correct, the most likely
+remaining explanation for a live 500 on both simultaneously is either a deployment that predates
+these fixes reaching Vercel, or a genuine MongoDB connectivity issue at the infrastructure level
+(env var, Atlas Network Access, or a paused cluster) — not something fixable from inside the
+codebase. Flagged clearly for the user to check rather than presented as resolved.
+
+Separately, found and fixed a real, independent bug while investigating: the console showed a
+service worker registering (confirmed this app is a PWA — public/sw.js, manifest.json). It
+correctly bypasses `/api/` routes entirely (not the cause of the two 500s specifically), but its
+page-caching strategy was cache-first with only a background refresh — the wrong tradeoff for pages
+like `/` that are Server Components rendering live DB data (prices, campaigns, stock) on every
+request. An online visitor could be served a stale cached homepage indefinitely with no way to tell.
+Rewrote to network-first with cache only as an offline fallback, and bumped the cache name (v1→v2,
+never bumped before) so the update actually clears old cached entries via the existing cleanup logic
+that had never once triggered.
+
+**Request 1 — rename shipments.** No dedicated name field exists; `shipmentNo` (required, unique-
+indexed) is the identifying label throughout. Before writing any UI, found that the shipment PUT
+route does a full-document REPLACE, not a `$set` — a naive rename endpoint would have wiped every
+other field. Found an exact existing precedent for this same problem already in the route
+(`documentTextOverridesOnly`) and followed it precisely: added a `shipmentNoOnly` branch that does a
+proper $set-only update, catches the duplicate-key error from `shipmentNo`'s unique index with a
+specific message, and sits after the existing incentive-lock check so a locked/claimed shipment
+still correctly refuses a rename. Added a small rename button to the two real shipment-management
+list views (the Contract-scoped list and the Export Archive), using `window.prompt()` to match each
+file's own already-established native-dialog convention (both already use `confirm()` for delete).
+
+**Request 2 — EXP No. year duplication.** Found and fixed two independent instances of the same
+bug, not just the one specifically pointed at. `expNoWithYear` (Ka Form Section E's EXP column,
+both languages) unconditionally appended a year that the admin now enters as part of `expNo` itself
+— renamed to `expNoWithDate`, stopped appending, and properly wired in the real `expDate` field for
+the column's actual "& Date" half (which the old code only ever half-delivered — a bare year, never
+a full date). While investigating, independently found `buildExpSequence` (feeds the declaration
+paragraph's "EXP Nos. X, Y, and Z" text) had the identical bug via an older, no-longer-valid
+assumption — fixed the same way. Not explicitly named by the user, but the same stated principle
+applied directly; leaving it would have reproduced their exact complaint in a different spot.
+
+**Request 3 — individual EXP/AWB/PC dates.** The schema already had all three date fields
+(`expDate`/`awbDate`/`pcDate` — a prior round had added `expDate` for the Ka Form fix above, and
+`awbDate`/`pcDate` existed but were never wired to anything). Found the codebase's own established
+`"{value} DT:{date}"` inline pattern (already used for Invoice No.) and followed it exactly for all
+three identifiers, across all three document generators (Packing List, the shared Invoice generator,
+and the DOCX/XLSX data-assembly function — included DOCX/XLSX this round since the request wasn't
+format-specific). Added the missing `awbDateStr`/`pcDateStr` UI inputs to the shipment editor,
+matching `expDate`'s existing input exactly; confirmed the general save path's `{...form}` spread
+needed no additional API changes since the schema already had these fields.
+
+**Verification:** tsc clean across all 7 touched files (one pre-existing, already-documented false
+positive in sw.js unrelated to this round's edit — a Service Worker global tsc can't resolve without
+full lib definitions, same class as the earlier `Buffer` false positive).
+
+## 24. Setup Reminder
 
 ```bash
 npm install

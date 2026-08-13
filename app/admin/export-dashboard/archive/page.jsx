@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Search, Archive, Download, Package, ReceiptText, Globe, Paperclip, Trash2 } from 'lucide-react';
+import { ArrowLeft, Search, Archive, Download, Package, ReceiptText, Globe, Paperclip, Trash2, Pencil } from 'lucide-react';
 import Loader from '@/components/ui/Loader';
 import Pagination from '@/components/ui/Pagination';
 import { format } from 'date-fns';
@@ -193,6 +193,31 @@ export default function ExportArchivePage() {
     }
   };
 
+  // Same dedicated shipmentNoOnly branch as the contract-scoped shipment list (see that page's own
+  // comment, and app/api/export/shipments/[id]/route.js) — the route's general save path is a
+  // full-document REPLACE, so a rename needs its own $set-only branch rather than resending an
+  // entire shipment. That branch sits behind the SAME server-side lock check every other write to
+  // a shipment already goes through here (see handleDelete's own comment just above) — a claimed/
+  // locked shipment is refused with an explanatory message via the toast below, nothing duplicated
+  // client-side.
+  const handleRename = async (s) => {
+    const next = window.prompt('Rename shipment', s.shipmentNo);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === s.shipmentNo) return;
+    const r = await fetch(`/api/export/shipments/${s._id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shipmentNoOnly: trimmed }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast.success('Shipment renamed');
+      setShipments((prev) => prev.map((x) => (x._id === s._id ? { ...x, shipmentNo: trimmed } : x)));
+    } else {
+      toast.error(d.message || 'Could not rename this shipment');
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-6 flex-wrap">
@@ -251,7 +276,12 @@ export default function ExportArchivePage() {
               <div key={s._id} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-800 flex-wrap gap-2">
                   <div>
-                    <p className="font-bold text-gray-900 dark:text-white text-sm">{s.shipmentNo}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-bold text-gray-900 dark:text-white text-sm">{s.shipmentNo}</p>
+                      <button onClick={() => handleRename(s)} title="Rename shipment" className="p-1 rounded-lg text-gray-300 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
                     <p className="text-xs text-gray-500">{s.buyer?.name || '—'} · {s.country?.flag || '🌍'} {s.country?.name || '—'} · {s.date ? format(new Date(s.date), 'dd MMM yyyy') : '—'}</p>
                     {/* R13: shipments completed via a claimed Incentive Application land here
                         automatically — link straight back to it for context. */}

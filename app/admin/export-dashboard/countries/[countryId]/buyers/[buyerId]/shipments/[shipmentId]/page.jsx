@@ -514,7 +514,7 @@ export default function ShipmentDetailPage() {
     portOfDischarge: '', finalDestination: '', salesTerm: 'CFR',
     countryOfOrigin: 'Bangladesh',
     tinNo: '518591244958', binNo: '71367570202', ercNo: '260326210852625',
-    expNo: '', expDateStr: '', awbNo: '', pcNo: '', rexNo: '', // R1: REX No, auto-fills from the License below
+    expNo: '', expDateStr: '', awbNo: '', awbDateStr: '', pcNo: '', pcDateStr: '', rexNo: '', // R1: REX No, auto-fills from the License below
     exportLicense: '', // requirement 7
     bankAccount: '', // requirement 6
     beneficiaryBank: 'Sonali Bank', accountNo: '1608902003846',
@@ -639,6 +639,8 @@ export default function ShipmentDetailPage() {
             ...p, ...s,
             dateStr: s.date ? new Date(s.date).toISOString().slice(0, 10) : '',
             expDateStr: s.expDate ? new Date(s.expDate).toISOString().slice(0, 10) : '',
+            awbDateStr: s.awbDate ? new Date(s.awbDate).toISOString().slice(0, 10) : '',
+            pcDateStr: s.pcDate ? new Date(s.pcDate).toISOString().slice(0, 10) : '',
             items: s.items?.length ? s.items : EMPTY(),
             // Batch 7: no forced EMPTY() fallback here — a genuinely empty array lets the
             // auto-seed effect (below, after liveTotalCTN etc. are computed) know it's safe to
@@ -710,6 +712,8 @@ export default function ShipmentDetailPage() {
       buyer: buyerId, country: countryId,
       date: form.dateStr ? new Date(form.dateStr) : new Date(),
       expDate: form.expDateStr ? new Date(form.expDateStr) : null,
+      awbDate: form.awbDateStr ? new Date(form.awbDateStr) : null,
+      pcDate: form.pcDateStr ? new Date(form.pcDateStr) : null,
       // Issue 43: Net Weight and Total Carton are auto-completed from the master products table —
       // the freshly-computed total always wins over whatever (now-unused) manual value might be
       // sitting in form state from an older save, rather than the old "prefer manual" priority.
@@ -1334,13 +1338,21 @@ export default function ShipmentDetailPage() {
                 <Input label="TIN" value={form.tinNo} onChange={e => set('tinNo', e.target.value)} />
                 <Input label="BIN" value={form.binNo} onChange={e => set('binNo', e.target.value)} />
                 <Input label="ERC" value={form.ercNo} onChange={e => set('ercNo', e.target.value)} />
-                <Input label="EXP No" value={form.expNo} onChange={e => set('expNo', e.target.value)} />
+                <Input label="EXP No" value={form.expNo} onChange={e => set('expNo', e.target.value)} hint="Enter the full EXP number as issued (year included, e.g. 000367/2026) — nothing is appended to this automatically" />
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">EXP Date</label>
                   <input type="date" value={form.expDateStr} onChange={e => set('expDateStr', e.target.value)} className="input-field py-2 text-sm" />
                 </div>
                 <Input label="AWB No" value={form.awbNo} onChange={e => set('awbNo', e.target.value)} />
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">AWB Date</label>
+                  <input type="date" value={form.awbDateStr} onChange={e => set('awbDateStr', e.target.value)} className="input-field py-2 text-sm" />
+                </div>
                 <Input label="PC No" value={form.pcNo} onChange={e => set('pcNo', e.target.value)} />
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">PC Date</label>
+                  <input type="date" value={form.pcDateStr} onChange={e => set('pcDateStr', e.target.value)} className="input-field py-2 text-sm" />
+                </div>
                 <Input label="REX No" value={form.rexNo} onChange={e => set('rexNo', e.target.value)} hint="Used in the Buyer's Invoice declaration as BDREX + this number" />
               </div>
             </div>

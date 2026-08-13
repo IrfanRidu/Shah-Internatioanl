@@ -122,6 +122,24 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ success: true, shipment: updated });
   }
 
+  // Rename action from the shipment list (contracts/[contractId]/page.jsx's quick-rename button)
+  // only ever wants to change shipmentNo — same reasoning as documentTextOverridesOnly just above:
+  // this route otherwise does a full-document REPLACE, which would require the list view to hold
+  // and resend an entire shipment's worth of data just to change one label. shipmentNo also carries
+  // a unique index (see the schema), so a rename can collide with another shipment's number —
+  // caught below and turned into a specific, actionable message instead of a generic 500.
+  if (body.shipmentNoOnly !== undefined) {
+    const trimmed = String(body.shipmentNoOnly || '').trim();
+    if (!trimmed) return NextResponse.json({ success: false, message: 'Shipment No. cannot be empty' }, { status: 400 });
+    try {
+      const updated = await ExportShipment.findByIdAndUpdate(params.id, { $set: { shipmentNo: trimmed } }, { new: true, runValidators: true });
+      return NextResponse.json({ success: true, shipment: updated });
+    } catch (error) {
+      if (error.code === 11000) return NextResponse.json({ success: false, message: `Shipment No. "${trimmed}" is already in use on another shipment — choose a different one.` }, { status: 409 });
+      throw error;
+    }
+  }
+
   // R2/R3: draft can't silently be pushed back to draft once left; and R15: while a rate override
   // is active (a manual rate set on this shipment's — still pending — Incentive Application), the
   // effective rate wins over whatever the client sent, the same way "Issue 46" already treats every
