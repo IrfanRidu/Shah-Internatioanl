@@ -967,7 +967,51 @@ needed no additional API changes since the schema already had these fields.
 positive in sw.js unrelated to this round's edit — a Service Worker global tsc can't resolve without
 full lib definitions, same class as the earlier `Buffer` false positive).
 
-## 24. Setup Reminder
+## 24. Batch 16 — EXP/AWB/PC 3-Column Identifier Table, Vercel src/-Folder Theory Addressed (R30)
+
+Full detail in AGENT_PROGRESS_16.md.
+
+**Vercel `src/` folder theory (no code change).** The user suggested the persisting Vercel errors
+might be because the project doesn't use a `src/` wrapper directory. Investigated and explained why
+this doesn't fit: `app/`/`lib/`/`components`/`models` at the project root plus `jsconfig.json`'s
+`@/*` → `./*` alias (used in every file across 16 rounds) confirms this layout is deliberate and
+fully valid — Next.js supports both conventions equally, `src/` is a style choice, not a
+requirement. The existing `.github/workflows/ci.yml` is an independent lint/test/build check
+unrelated to how Vercel actually deploys, and its dummy local `MONGODB_URI` is explicitly commented
+as not connecting to any live service. The deployment showing "Ready" also rules out a genuine
+structural problem, which would fail the build entirely rather than produce isolated 500s on
+specific data-fetching routes. Pointed the user at Vercel's Function Logs (the real, un-redacted
+server error) as the concrete next diagnostic step, since live logs/env vars aren't visible from
+here.
+
+**EXP/AWB/PC identifier formatting.** Last round's inline "value DT:date" text wasn't the intended
+layout — clarified to a real 3-column table (Label | Value | Date) with a vertical divider and the
+date right-aligned, matching the reference photo precisely. Built a new dedicated
+`drawIdentifierTable` function in lib/exportDocuments.js (manual jsPDF coordinate drawing, 14/56/30%
+column split) rather than extending `drawInfoGrid` (a [label,value] 2-per-row single-line design
+with no concept of a 3rd column's own alignment). Removed EXP No/AWB/PC from both InfoGrid calls
+(Packing List, Invoice), preserving the existing Final-Destination pairing via a null placeholder,
+and draw the new table immediately after. DOCX/XLSX intentionally left on last round's inline format
+— a fundamentally different rendering system, consistent with this file's established "native/
+editable, not pixel-matched" DOCX philosophy. Verified the geometry empirically (no jspdf available
+locally, same constraint as every round) by replicating the exact same column-proportion math in an
+HTML/CSS mockup rendered via the local Playwright/Chromium install — closely matches the reference
+layout, and confirmed the longest realistic EXP value fits its column without overflow. tsc clean.
+
+**Same-day follow-up.** User sent an actual screenshot of the generated Packing List, surfacing two
+concrete problems with the fix above: (1) the print-PREVIEW page never got the 3-column treatment —
+R30 only touched the jsPDF/downloaded-PDF generator; the separate HTML print-preview component
+(app/(print)/print/export/[shipmentId]/page.jsx) still showed the older inline text format. Fixed
+with a nested flex sub-layout that CSS naturally contains within its existing grid column — no
+manual width tuning needed the way jsPDF required. (2) The identifier table really was too wide:
+measured precisely (cropped and pixel-compared against the row above in the user's own screenshot,
+not eyeballed) — `drawIdentifierTable` used the full CONTENT_WIDTH, but sits directly under
+`drawInfoGrid`'s LEFT column, so its right edge cut into the right column's space instead of
+stopping level with the rows above it. Fixed by matching `drawInfoGrid`'s own center-divider
+position exactly (`CONTENT_WIDTH/2 + 1`) and re-tuning internal proportions for the narrower width,
+re-verified with an updated mockup that included a row above it for direct alignment comparison.
+
+## 25. Setup Reminder
 
 ```bash
 npm install

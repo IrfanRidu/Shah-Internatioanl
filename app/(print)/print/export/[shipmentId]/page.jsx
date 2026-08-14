@@ -111,6 +111,17 @@ function DocHeader({ letterheadUrl, exporterInfo, plain, onLetterheadLoad }) {
 // shipment — used by Packing List, Buyer's Invoice, and BD Invoice alike.
 function InfoGrid({ shipment, buyer, exporterInfo }) {
   const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB') : '');
+  // EXP/AWB/PC each carry their own date (expDate/awbDate/pcDate) — rendered as Label | Value |
+  // Date within the SAME left-column cell the rest of this grid already uses, a vertical rule
+  // between value and date, date right-aligned, matching the reference document precisely. A
+  // nested flex row rather than a 3rd CSS grid column: this stays automatically contained within
+  // the existing 1fr-wide left column (can't spill into the right column the way the jsPDF path's
+  // manual coordinate math briefly did — see drawIdentifierTable's own comment in
+  // lib/exportDocuments.js for that fix), no separate width tuning needed on this side.
+  const idRow = { display: 'flex', alignItems: 'baseline', gap: '4px' };
+  const idLabel = { fontWeight: 'bold', flexShrink: 0 };
+  const idValue = { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+  const idDate = { borderLeft: '1px solid #000', paddingLeft: '6px', textAlign: 'right', flexShrink: 0, minWidth: '62px' };
   return (
     <div style={{ border: '1px solid #000', marginBottom: '8px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', fontSize: '9.5px' }}>
@@ -129,13 +140,19 @@ function InfoGrid({ shipment, buyer, exporterInfo }) {
         <div style={CELL}><b>ERC :</b> {shipment.ercNo}</div>
         <div style={CELL_LAST}><b>Port Of Discharge :</b> {shipment.portOfDischarge}</div>
 
-        <div style={CELL}><b>EXP :</b> {shipment.expNo} {shipment.expDate ? fmtDate(shipment.expDate) : ''}</div>
+        <div style={CELL}>
+          <div style={idRow}><span style={idLabel}>EXP</span><span style={idValue}>{shipment.expNo}</span><span style={idDate}>{fmtDate(shipment.expDate)}</span></div>
+        </div>
         <div style={CELL_LAST}><b>Final Destination :</b> {shipment.finalDestination}</div>
 
-        <div style={CELL}><b>AWB :</b> {shipment.awbNo} {shipment.awbDate ? fmtDate(shipment.awbDate) : ''}</div>
+        <div style={CELL}>
+          <div style={idRow}><span style={idLabel}>AWB</span><span style={idValue}>{shipment.awbNo}</span><span style={idDate}>{fmtDate(shipment.awbDate)}</span></div>
+        </div>
         <div style={CELL_LAST}></div>
 
-        <div style={{ ...CELL, borderBottom: shipment.beneficiaryBank ? '1px solid #000' : 'none' }}><b>PC :</b> {shipment.pcNo} {shipment.pcDate ? fmtDate(shipment.pcDate) : ''}</div>
+        <div style={{ ...CELL, borderBottom: shipment.beneficiaryBank ? '1px solid #000' : 'none' }}>
+          <div style={idRow}><span style={idLabel}>PC</span><span style={idValue}>{shipment.pcNo}</span><span style={idDate}>{fmtDate(shipment.pcDate)}</span></div>
+        </div>
         <div style={{ ...CELL_LAST, borderBottom: shipment.beneficiaryBank ? '1px solid #000' : 'none' }}></div>
       </div>
       {shipment.beneficiaryBank && (
