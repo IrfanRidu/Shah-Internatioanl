@@ -12,7 +12,6 @@ import { AVAILABLE_COLUMNS, COLUMN_LABELS, DEFAULT_DOCUMENT_COLUMNS, DOC_KEYS, D
 const EMPTY = {
   name: '', image: '', hsCode: '', incentivePercentage: '', taxPercentage: '', incentiveApplicationCost: '', othersCost: '',
   documentColumns: { packingList: [...DEFAULT_DOCUMENT_COLUMNS.packingList], buyerInvoice: [...DEFAULT_DOCUMENT_COLUMNS.buyerInvoice], bdInvoice: [...DEFAULT_DOCUMENT_COLUMNS.bdInvoice] },
-  bdInvoiceShowHsCode: true,
 };
 
 export default function ExportCategorySection({ currency }) {
@@ -46,7 +45,6 @@ export default function ExportCategorySection({ currency }) {
         buyerInvoice: c.documentColumns?.buyerInvoice?.length ? [...c.documentColumns.buyerInvoice] : [...DEFAULT_DOCUMENT_COLUMNS.buyerInvoice],
         bdInvoice: c.documentColumns?.bdInvoice?.length ? [...c.documentColumns.bdInvoice] : [...DEFAULT_DOCUMENT_COLUMNS.bdInvoice],
       },
-      bdInvoiceShowHsCode: c.bdInvoiceShowHsCode !== false,
     });
     setModal(true);
   };
@@ -92,7 +90,6 @@ export default function ExportCategorySection({ currency }) {
       incentiveApplicationCost: Number(form.incentiveApplicationCost) || 0,
       othersCost: Number(form.othersCost) || 0,
       documentColumns: normalizedColumns,
-      bdInvoiceShowHsCode: !!form.bdInvoiceShowHsCode,
     }) });
     const d = await r.json();
     setSaving(false);
@@ -209,10 +206,6 @@ export default function ExportCategorySection({ currency }) {
                   </div>
                 </div>
               ))}
-              <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer select-none px-1">
-                <input type="checkbox" checked={form.bdInvoiceShowHsCode} onChange={e => set('bdInvoiceShowHsCode', e.target.checked)} className="rounded border-gray-300" />
-                Show H.S. Code under the product name on the BD Invoice
-              </label>
             </div>
           </div>
         </div>

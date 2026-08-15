@@ -6,6 +6,13 @@ import Product from '@/models/Product';
 import SpecialSection from '@/models/SpecialSection';
 import FlashSale from '@/models/FlashSale';
 import Order from '@/models/Order';
+// Batch 17 (R9): required by the .populate('category', ...) call below — every file that calls
+// .populate() on a Mongoose ref must import the target model directly in that same file, or
+// MissingSchemaError throws on a fresh serverless cold start (mongoose's model registry is
+// per-process, not centrally seeded by lib/mongodb.js's connectDB()). See PROJECT_STATUS.md for
+// the fuller history of this bug class — this sweep (batch 17) extends the same fix already
+// applied to app/api/export/* in an earlier batch to the rest of the app.
+import Category from '@/models/Category';
 import ProductDetailClient from './ProductDetailClient';
 import { applyComputedHarvestSeason } from '@/lib/harvestSeason';
 

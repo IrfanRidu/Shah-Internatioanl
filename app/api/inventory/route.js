@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Inventory from '@/models/Inventory';
+// Batch 17 (R9): required by .populate('product', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import Product from '@/models/Product';
 import { hasPermission } from '@/lib/permissions';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and

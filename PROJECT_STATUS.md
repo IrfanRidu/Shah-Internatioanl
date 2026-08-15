@@ -1011,7 +1011,116 @@ stopping level with the rows above it. Fixed by matching `drawInfoGrid`'s own ce
 position exactly (`CONTENT_WIDTH/2 + 1`) and re-tuning internal proportions for the narrower width,
 re-verified with an updated mockup that included a row above it for direct alignment comparison.
 
-## 25. Setup Reminder
+## 25. Batch 17 — Category-Wise Product Breakdown, BD Invoice Restructure, Dynamic Sales Terms, Plain A4 Margin, Shipment Identifiers Alignment, Letterhead Consolidation, Mobile Admin Nav, Systemic populate() Sweep (R31)
+
+Full detail in AGENT_PROGRESS_17.md.
+
+**Category-wise product breakdown (R1/R2).** `Product.category` (the catalog category, e.g. "Fresh
+Fruits" — distinct from the shipment-level `ExportCategory` used for incentives/document format)
+was never actually captured on a shipment line item: `ShipmentItemSchema` had a `productId` ref
+field, but neither `selectProductForRow` nor `addFromProduct` in the shipment editor's `ItemsTable`
+ever set it. Added a `category` string field to `ShipmentItemSchema` (a snapshot taken at selection
+time, same pattern as the existing `botanicalName`/`hsCode` fields — deliberately not a live join,
+so it survives the source Product changing/being deleted and needs no extra fetch to total). Added
+a shared `computeCategoryBreakdown(items)` helper (lib/exportColumns.js) that groups by this field
+and sums CTN/weight/qty/value per category. A new "Category Wise Product Details" section now sits
+in the shipment editor exactly where requested — after the Products table, before Financial Details
+& Profit Analysis — showing this breakdown live as products are added, with a Grand Total footer
+reusing the page's already-computed aggregate totals rather than re-deriving them.
+
+**BD Invoice restructure (R3).** `seedBdItemsFromShipment()` used to produce a single row named
+after the shipment's whole Export Category. It now maps `computeCategoryBreakdown()`'s output
+directly — one row per distinct product category found in Shipment Details, each with its own
+summed CTN/quantity/value and a seeded (still admin-editable) HS Code from the first item in that
+group that has one set. HS Code is no longer a sub-line concatenated under the product name; it's a
+genuine column now, added to `AVAILABLE_COLUMNS.bdInvoice`/`DEFAULT_DOCUMENT_COLUMNS.bdInvoice`
+and rendered through the exact same generic per-column pipeline as every other column (`cellText`/
+`renderItemCell` already had an `hsCode` case from Batch 7 — it just wasn't reachable from BD
+Invoice's column set before now). This meant rewriting the name/HS-code logic in FOUR places that
+had each duplicated it independently — the editor's own `BdInvoiceTable`, the jsPDF generator, the
+shared DOCX/XLSX data assembler, and the print page's `InvoiceDoc` — all four now agree: BD Invoice
+rows show "Name of Products" (no botanical name — these are category names now, not individual
+products) with HS Code broken out. The old `shouldShowBdHsCode()` toggle (and its
+`ExportCategory.bdInvoiceShowHsCode` UI checkbox) is fully superseded and removed — HS Code is a
+normal togglable column like any other now. Cross-verification against Shipment Details totals, and
+manual admin editing of any row, both already worked generically across however many rows exist
+(`.reduce()`/`.every()` don't assume a row count) — needed no changes.
+
+**Dynamic Sales Terms (R4).** `columnHeaderLabel()` gained a third `salesTerm` parameter; the
+`totalValue` column header now reads `` Total {currency} ({salesTerm}) `` using each shipment's own
+free-text `salesTerm` field, instead of an unconditional `(CFR)`. Every call site across the editor,
+`lib/exportDocuments.js`, and the print page was updated to pass it through. A second, easy-to-miss
+instance of the same bug was also found and fixed: `COLUMN_LABELS.totalValue` (a separate fallback
+string, actually rendered directly — bypassing `columnHeaderLabel` entirely — by the category
+editor's document-column-picker checkboxes, a context with no specific shipment/currency to draw a
+real term from) now reads "Total Value (Sales Terms)" generically instead of "(CFR)".
+
+**Plain A4 top margin (R5).** Both the jsPDF generator and the browser print page started plain-mode
+content at just the ordinary page margin (12mm) — nowhere near the 1" (25.4mm) needed to safely clear
+a physical, pre-printed letterhead on paper the document might be printed directly onto. Added a
+shared `PLAIN_TOP_MARGIN`/`PLAIN_TOP_MARGIN_MM` constant (25.4mm) to both files, applied whenever no
+letterhead image actually gets drawn — this covers Plain A4 being explicitly chosen AND the separate
+edge case of letterhead mode being requested with nothing actually configured/loadable, which
+previously fell through to the same too-small default. Left/right/bottom margins untouched — top
+clearance only, as asked.
+
+**Shipment Identifiers alignment (R6, screenshot-reported).** Root cause: the 4 date fields
+(Shipment/EXP/AWB/PC Date) used hand-rolled markup with a smaller label (text-xs vs. the `Input`
+component's text-sm) and smaller input padding (py-2/text-sm override vs. `Input`'s unmodified py-3)
+than every sibling field in the same grid, since Tailwind's utility layer always wins over the
+`input-field` component class regardless of which utility value is present. Replaced all 4 with
+`<Input type="date" .../>` — the exact pattern already established elsewhere in this codebase
+(`ExportLicenseSection.jsx`, the buyer editor) — a pure markup swap with zero logic change.
+
+**Letterhead upload consolidation (R7).** Found three upload entry points writing to the letterhead
+concept, not one: the correct per-license upload in `ExportLicenseSection.jsx`, plus two redundant
+GLOBAL upload cards (the main Export Dashboard page, and a "fallback" card inside the shipment
+editor itself) both writing to the same `Settings.exportLetterheadUrl`. Removed both redundant
+upload UIs and their supporting state/handlers; kept the underlying fallback *read* intact (a
+shipment with no license selected still degrades gracefully to whatever was last set, it just can no
+longer be changed from either of those two places going forward). While investigating, also found —
+and confirmed fully inert via a codebase-wide grep of every `.letterheadUrl` access — a third,
+already-orphaned `letterheadUrl` field directly on the `ExportShipment` model itself, left over from
+an even earlier design iteration; nothing reads or writes it anywhere, so it needed no removal,
+just a breadcrumb comment for the next person who finds it.
+
+**Mobile admin navigation (R8).** The admin panel had no way at all to reach its own nav below the
+`md` breakpoint (the desktop `<aside>` is `hidden md:flex`, and the storefront's `MobileBottomNav`
+explicitly excludes every `/admin` route). Added a slide-out drawer, not a curated bottom tab bar —
+"all the features... across all routes and tabs" ruled out anything that would need picking a
+handful of shortcuts. New `AdminShell.jsx` client component owns the open/close state shared between
+`AdminSidebar` (the drawer) and `AdminTopBar` (the hamburger button that opens it), keeping
+`layout.jsx` a server component focused purely on session/redirect/badge-count work. `AdminSidebar`
+extracts its nav-groups and footer rendering into two functions parameterized by `isCollapsed`,
+called once for the existing desktop rail and once for the new mobile drawer (always expanded) —
+one shared `map()`, so desktop and mobile can never drift out of sync with each other as the nav
+list grows over time.
+
+**Systemic `.populate()`-without-import sweep (R9 — root cause of the reported product-page 500).**
+Mongoose keeps one global model registry per process; any file calling `.populate('field')` without
+directly importing the target model in that same file throws `MissingSchemaError` on whichever
+serverless cold start happens to hit it first — `lib/mongodb.js`'s `connectDB()` doesn't centrally
+register every model. Batch 8 fixed this class of bug, but only under `app/api/export/*`. A
+codebase-wide static-analysis pass (cross-referencing every `.populate()` call against each file's
+own `@/models/*` imports) found the exact same bug in 22 more files never covered by that earlier
+sweep — including `app/api/products/route.js`, the literal endpoint
+(`/api/products?page=1&limit=20&adminView=true`) in the reported browser error, and the
+customer-facing product detail page. All 22 fixed with a direct import for whichever model each
+file's own `.populate()` calls actually need (Category/Product/User/ExportCategory across products,
+orders, reviews, messages, coupons, flash-sales, inventory, roles, special-sections, cron, and one
+export route). Re-ran the same analysis afterward, expanded to include `lib/` too (36 files total
+use `.populate()` somewhere in this codebase) — zero remaining findings. Separately verified
+`/api/admin/metrics` and `/api/currency` (the other two endpoints in the reported error log) are
+already correctly hardened in this code — both have `force-dynamic` set, and `/api/currency` has a
+genuine defensive fallback chain that never hard-fails — confirmed a fresh, independent sweep of all
+79 `route.js` files shows 79/79 correctly configured, no regression from Batch 13's fix. If either
+still 500s on the live site despite this, the remaining explanation is deployment/DB-connectivity
+(a stale deploy, or a MongoDB Atlas reachability issue), not something a further code change here
+can address — consistent with what Batches 15/16 independently concluded. The unrelated
+`chrome-extension` service-worker console error in the same log is a browser extension interacting
+with the site's own cache API, entirely outside this app's control.
+
+## 26. Setup Reminder
 
 ```bash
 npm install

@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
+// Batch 17 (R9): required by .populate('user', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import User from '@/models/User';
 import { hasPermission } from '@/lib/permissions';
 import { sendOrderStatusEmail } from '@/lib/email';
 

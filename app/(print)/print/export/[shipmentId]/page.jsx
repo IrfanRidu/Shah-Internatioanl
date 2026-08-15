@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { generateShipmentDocPDF, docTypeLabel, resolveDocumentText } from '@/lib/exportDocuments';
-import { getDocumentColumns, shouldShowBdHsCode, columnHeaderLabel, avgPrice } from '@/lib/exportColumns';
+import { getDocumentColumns, columnHeaderLabel, avgPrice } from '@/lib/exportColumns';
 import { LETTERHEAD_CONTENT_START_MM } from '@/lib/pdfLetterhead';
 
 // This print container's own top padding (12mm, matching where it's set further down) stacks
@@ -12,6 +12,12 @@ import { LETTERHEAD_CONTENT_START_MM } from '@/lib/pdfLetterhead';
 // the SAME 45mm-from-the-printable-area's-own-top-edge the PDF generator uses, not 12mm further
 // down than that.
 const CONTAINER_PADDING_MM = 12;
+
+// Batch 17 (R5): matches PLAIN_TOP_MARGIN in lib/exportDocuments.js — see that file's drawHeader
+// comment for the full reasoning (plain/no-letterhead documents are meant to be printed directly
+// onto, or laid over, paper that may already have a physical company letterhead pre-printed on it,
+// and need a safe 1" clearance so content can't visually overlap it).
+const PLAIN_TOP_MARGIN_MM = 25.4;
 
 // ─── Shared plain/formal styling — batch 7: the previous dark-header / colored-row / coded-banner
 // look did not match the reference documents at all (Packing_List.pdf, Buyer_s_Invoice_.pdf,
@@ -91,8 +97,13 @@ function renderGrandCell(key, grand) {
 // generator uses, so print and download match exactly) — content now starts at a predictable
 // position regardless of how tall the uploaded file itself happens to be.
 function DocHeader({ letterheadUrl, exporterInfo, plain, onLetterheadLoad }) {
-  if (plain) return null;
-  if (!letterheadUrl) return null;
+  // Batch 17 (R5): no image is ever drawn in either of these two cases (Plain A4 explicitly
+  // chosen, or letterhead mode requested but nothing is configured/loadable for this shipment yet)
+  // — reserve the same safe 1" clearance the PDF download uses instead of rendering nothing at
+  // all, so content can never visually overlap a physical pre-printed letterhead the paper itself
+  // might already have. Mirrors the image branch's own spacer-height formula below exactly, just
+  // with the 1" constant in place of LETTERHEAD_CONTENT_START_MM.
+  if (plain || !letterheadUrl) return <div style={{ height: `${PLAIN_TOP_MARGIN_MM - CONTAINER_PADDING_MM}mm` }} />;
   return (
     <>
       <img
@@ -194,7 +205,7 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
           <tr>
             <th style={TH}>SL NO.</th>
             <th style={{ ...TH, textAlign: 'left' }}>Name of Products<br />(Botanical Name)</th>
-            {columns.map((k) => <th key={k} style={TH}>{columnHeaderLabel(k, shipment.baseCurrency)}</th>)}
+            {columns.map((k) => <th key={k} style={TH}>{columnHeaderLabel(k, shipment.baseCurrency, shipment.salesTerm)}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -229,8 +240,9 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
 
 // R3/R4: Buyer's Invoice and BD Invoice share this component (both headed "Commercial Invoice"),
 // but differ in: item source (Buyer's Invoice mirrors the master `items`; BD Invoice uses its own
-// small admin-editable `bdItems` — see the shipment editor), column set (registry key), H.S. Code
-// placement (BD Invoice only, as a sub-line under the name, never its own column), and declaration
+// small admin-editable `bdItems`, one row per product category — see the shipment editor), column
+// set (registry key; batch 17 gives BD Invoice its own HS Code column), name header/cell (batch
+// 17: BD Invoice rows are category names, so no botanical name applies there), and declaration
 // text (Buyer's Invoice gets the full BDREX/GSP paragraph; BD Invoice gets the same simple one as
 // Packing List).
 function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type, onLetterheadLoad }) {
@@ -239,7 +251,6 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
   const currency = shipment.baseCurrency || 'EUR';
   const grand = grandTotals(items);
   const columns = getDocumentColumns(shipment.exportCategory, isBuyer ? 'buyerInvoice' : 'bdInvoice');
-  const showBdHsCode = !isBuyer && shouldShowBdHsCode(shipment.exportCategory);
   const { declaration, signatoryTitle } = resolveDocumentText(isBuyer ? 'buyerInvoice' : 'bdInvoice', shipment, exporterInfo);
 
   return (
@@ -253,8 +264,12 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
         <thead>
           <tr>
             <th style={TH}>SL NO.</th>
-            <th style={{ ...TH, textAlign: 'left' }}>Name of Products<br />(Botanical Name)</th>
-            {columns.map((k) => <th key={k} style={TH}>{columnHeaderLabel(k, currency)}</th>)}
+            {isBuyer ? (
+              <th style={{ ...TH, textAlign: 'left' }}>Name of Products<br />(Botanical Name)</th>
+            ) : (
+              <th style={{ ...TH, textAlign: 'left' }}>Name of Products</th>
+            )}
+            {columns.map((k) => <th key={k} style={TH}>{columnHeaderLabel(k, currency, shipment.salesTerm)}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -263,8 +278,7 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
               <td style={TDC}>{i + 1}</td>
               <td style={TD}>
                 {item.productName}
-                {item.botanicalName && <><br /><span style={{ fontStyle: 'italic', fontSize: '8.5px' }}>({item.botanicalName})</span></>}
-                {showBdHsCode && item.hsCode && <><br /><span style={{ fontSize: '8.5px' }}>H.S Code : {item.hsCode}</span></>}
+                {isBuyer && item.botanicalName && <><br /><span style={{ fontStyle: 'italic', fontSize: '8.5px' }}>({item.botanicalName})</span></>}
               </td>
               {columns.map((k) => <td key={k} style={TDC}>{renderItemCell(k, item)}</td>)}
             </tr>

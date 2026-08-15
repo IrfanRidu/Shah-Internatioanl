@@ -4,6 +4,10 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Conversation from '@/models/Conversation';
 import Message from '@/models/Message';
+// Batch 17 (R9): required by .populate() calls below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why these direct imports are necessary.
+import Product from '@/models/Product';
+import User from '@/models/User';
 import { sendNewMessageEmail } from '@/lib/email';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and

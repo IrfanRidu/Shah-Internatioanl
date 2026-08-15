@@ -1,13 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Globe2, Plus, Edit2, Trash2, BarChart3, Archive, Ship, Upload } from 'lucide-react';
+import { Globe2, Plus, Edit2, Trash2, BarChart3, Archive, Ship } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
-import { resizeImageFile } from '@/lib/clientImageResize';
 
 // Country flag emoji from ISO code
 const flagEmoji = (code) => {
@@ -51,10 +50,6 @@ export default function ExportDashboardPage() {
   const [form, setForm] = useState({ name: '', code: '', flag: '', currency: 'EUR', notes: '' });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  // Global company letterhead (issue 39) — manageable from here too, not just inside a specific
-  // shipment, since it applies to every shipment's documents until replaced.
-  const [letterheadUrl, setLetterheadUrl] = useState('');
-  const [uploadingLH, setUploadingLH] = useState(false);
   // Batch 7 (R1) — exporter name/address, previously hardcoded text scattered across the print/PDF
   // code, now a single editable source shown on every Shipment Details tab and every document.
   const [exporterInfo, setExporterInfo] = useState({ exporterName: '', exporterAddress: '' });
@@ -62,7 +57,6 @@ export default function ExportDashboardPage() {
   const [exporterDraft, setExporterDraft] = useState(null); // non-null while the small edit form is open
   useEffect(() => {
     fetch('/api/settings').then(r => r.json()).then(d => {
-      setLetterheadUrl(d?.settings?.exportLetterheadUrl || '');
       setExporterInfo({ exporterName: d?.settings?.exporterName || 'Shah International', exporterAddress: d?.settings?.exporterAddress || '' });
     }).catch(() => {});
   }, []);
@@ -78,31 +72,6 @@ export default function ExportDashboardPage() {
       toast.success('Exporter details updated — now used on every shipment document');
     } else toast.error(d.message || 'Failed to save');
   };
-  const handleLetterheadUpload = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setUploadingLH(true);
-    try {
-      // Letterhead is now used as the actual PDF page background (see lib/pdfLetterhead.js), so it
-      // keeps a generous resolution here — still resized client-side first (Vercel's Serverless
-      // Functions hard-cap request bodies at 4.5MB, not configurable, and an unresized photo/scan
-      // can easily exceed that), just at a much higher ceiling than the small-icon uploads elsewhere
-      // in Settings, so the letterhead still prints crisp at full page width.
-      const dataUrl = await resizeImageFile(file, { maxDimension: 2000, quality: 0.88 });
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'letterheads' }) });
-      const data = await res.json();
-      if (data.success) {
-        const settingsRes = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exportLetterheadUrl: data.url, exportLetterheadUpdatedAt: new Date() }) });
-        const settingsData = await settingsRes.json();
-        if (settingsData.success) { setLetterheadUrl(data.url); toast.success('Company letterhead updated — now used on every shipment'); }
-        else toast.error('Uploaded, but failed to save as the company letterhead');
-      } else toast.error(data.message || 'Upload failed');
-    } catch (err) {
-      toast.error(err.message || 'Upload failed');
-    } finally {
-      setUploadingLH(false);
-    }
-  };
-
   const fetchCountries = async () => {
     setLoading(true);
     const r = await fetch('/api/export/countries');
@@ -152,26 +121,12 @@ export default function ExportDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        {/* Company letterhead — global, used on every shipment's documents until replaced (issue 39) */}
-        <div className="bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 p-4 flex items-center gap-4 flex-wrap">
-          {letterheadUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={letterheadUrl} alt="Current letterhead" className="h-12 w-auto max-w-[160px] object-contain bg-white rounded-lg border border-amber-200 p-1" />
-          )}
-          <div className="flex-1 min-w-[160px]">
-            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Company Letterhead</p>
-            <p className="text-xs text-amber-600 mt-0.5">Used as the actual page background on every printed/downloaded shipment document — your image is placed exactly as uploaded (full width, original proportions, never stretched or cropped), for every country and buyer, until you replace it here</p>
-            {letterheadUrl && <p className="text-xs text-green-600 mt-1">✓ Currently set</p>}
-          </div>
-          <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-amber-300 rounded-xl cursor-pointer text-sm font-medium text-amber-700 hover:bg-amber-50 transition-all">
-            <Upload className="w-4 h-4" /> {uploadingLH ? 'Uploading...' : letterheadUrl ? 'Replace' : 'Upload Letterhead'}
-            <input type="file" accept="image/*" onChange={handleLetterheadUpload} className="hidden" disabled={uploadingLH} />
-          </label>
-        </div>
-
-        {/* Batch 7 (R1) — exporter name/address, shown on every Shipment Details tab & document */}
-        <div className="bg-green-50 dark:bg-green-900/20 rounded-2xl border border-green-200 dark:border-green-900 p-4">
+      <div className="mb-6">
+        {/* Batch 7 (R1) — exporter name/address, shown on every Shipment Details tab & document.
+            Batch 17 (R7): this used to sit in a 2-column grid next to a global "Company
+            Letterhead" upload card — that card is removed (letterhead now comes exclusively from
+            the selected Export License, see ExportLicenseSection), so this card now stands alone. */}
+        <div className="bg-green-50 dark:bg-green-900/20 rounded-2xl border border-green-200 dark:border-green-900 p-4 max-w-xl">
           {exporterDraft ? (
             <div className="space-y-2">
               <input value={exporterDraft.exporterName} onChange={e => setExporterDraft(p => ({ ...p, exporterName: e.target.value }))}

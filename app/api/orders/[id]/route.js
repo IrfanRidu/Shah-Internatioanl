@@ -5,6 +5,9 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import User from '@/models/User';
 import Inventory from '@/models/Inventory';
+// Batch 17 (R9): required by .populate('items.product', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import Product from '@/models/Product';
 import { sendOrderStatusEmail } from '@/lib/email';
 import { hasPermission, isAdminRole } from '@/lib/permissions';
 

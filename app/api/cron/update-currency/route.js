@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import CurrencyRate from '@/models/CurrencyRate';
 import Inventory from '@/models/Inventory';
+// Batch 17 (R9): required by .populate('product', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import Product from '@/models/Product';
 import { sendLowStockAlert } from '@/lib/email';
 import { fetchLiveRates } from '@/lib/exchangeRates';
 

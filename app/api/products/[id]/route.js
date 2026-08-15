@@ -4,6 +4,9 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Inventory from '@/models/Inventory';
+// Batch 17 (R9): required by .populate('category', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import Category from '@/models/Category';
 import { hasPermission, isAdminRole } from '@/lib/permissions';
 import { computeHarvestingSeason } from '@/lib/utils';
 import { applyComputedHarvestSeason } from '@/lib/harvestSeason';

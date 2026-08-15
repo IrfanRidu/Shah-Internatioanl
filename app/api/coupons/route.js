@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Coupon from '@/models/Coupon';
+// Batch 17 (R9): required by .populate() calls below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import Product from '@/models/Product';
 import { hasPermission, isAdminRole } from '@/lib/permissions';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and

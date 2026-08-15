@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Review from '@/models/Review';
+// Batch 17 (R9): required by .populate() calls below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why these direct imports are necessary.
+import Product from '@/models/Product';
+import User from '@/models/User';
 
 // Public endpoint: returns real, admin-approved reviews for the homepage
 // testimonials carousel. This replaces what used to be a hardcoded array of

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
+// Batch 17 (R9): required by .populate('category', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import Category from '@/models/Category';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and
 // must never be statically cached/prerendered (prevents both stale data and the

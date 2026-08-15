@@ -5,6 +5,9 @@ import connectDB from '@/lib/mongodb';
 import Review from '@/models/Review';
 import Product from '@/models/Product';
 import Order from '@/models/Order';
+// Batch 17 (R9): required by .populate('user', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import User from '@/models/User';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and
 // must never be statically cached/prerendered (prevents both stale data and the

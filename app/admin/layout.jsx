@@ -1,11 +1,10 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
-import AdminSidebar from '@/components/layout/AdminSidebar';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Conversation from '@/models/Conversation';
-import AdminTopBar from './AdminTopBar';
+import AdminShell from './AdminShell';
 
 export const metadata = { title: { default: 'Admin Panel | Shah International', template: '%s | Admin' } };
 
@@ -28,15 +27,12 @@ export default async function AdminLayout({ children }) {
     ]);
   } catch {}
 
+  // Batch 17 (R8): the actual <aside>/<main> markup, plus the mobile drawer + hamburger button
+  // that share state with each other, now lives in AdminShell (a client component) — this file
+  // stays a server component focused on session/redirect/badge-count work only.
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
-      <AdminSidebar pendingOrders={pendingOrders} unreadMessages={unreadMessages} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <AdminTopBar session={session} />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
-      </div>
-    </div>
+    <AdminShell session={session} pendingOrders={pendingOrders} unreadMessages={unreadMessages}>
+      {children}
+    </AdminShell>
   );
 }

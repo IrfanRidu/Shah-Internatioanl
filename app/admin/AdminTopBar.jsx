@@ -1,11 +1,11 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Search, Moon, Sun } from 'lucide-react';
+import { Search, Moon, Sun, Menu } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import NotificationBell from '@/components/admin/NotificationBell';
 
-export default function AdminTopBar({ session }) {
+export default function AdminTopBar({ session, onMenuClick }) {
   const { theme, setTheme } = useTheme();
   const [search, setSearch] = useState('');
   const router = useRouter();
@@ -18,7 +18,20 @@ export default function AdminTopBar({ session }) {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-6 py-3 flex items-center justify-between gap-4 flex-shrink-0">
+    <div className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-3 sm:px-6 py-3 flex items-center justify-between gap-3 sm:gap-4 flex-shrink-0">
+      {/* R8: only ever visible below md, where the desktop <aside> in AdminSidebar is hidden — this
+          is the only way into the admin nav on a phone/tablet. Placed first, in normal flow, so it
+          never overlaps the search box next to it (a `fixed` floating button was considered, but
+          would sit on top of whatever's beneath it instead of sharing this bar's own layout). */}
+      {onMenuClick && (
+        <button
+          onClick={onMenuClick}
+          className="md:hidden p-2 -ml-1 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex-shrink-0"
+          aria-label="Open menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      )}
       <div className="relative flex-1 max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input

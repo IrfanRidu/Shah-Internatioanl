@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import ExportLicense from '@/models/ExportLicense';
+// Batch 17 (R9): required by .populate('licenseType', ...) below — see the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
+import ExportCategory from '@/models/ExportCategory';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and
 // must never be statically cached/prerendered (prevents both stale data and the

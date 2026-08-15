@@ -35,6 +35,9 @@ const ExportCategorySchema = new mongoose.Schema({
   },
   // BD Invoice shows HS Code as a sub-line under the product name (never its own column, per the
   // reference layout) — a separate on/off switch rather than a column key for that reason.
+  // batch 17: superseded — HS Code is now a normal togglable column in documentColumns.bdInvoice
+  // (see lib/exportColumns.js) like every other BD Invoice column, instead of this separate
+  // switch. Left in the schema harmlessly for any already-saved documents; nothing reads it.
   bdInvoiceShowHsCode: { type: Boolean, default: true },
 }, { timestamps: true });
 

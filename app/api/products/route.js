@@ -4,6 +4,13 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Inventory from '@/models/Inventory';
+// Batch 17 (R9): required by .populate('category', ...) below — this is very likely the exact
+// root cause of the reported "/api/products?page=1&limit=20&adminView=true 500" error: on a
+// fresh serverless cold start, nothing had registered the Category model yet in this Lambda's
+// module scope, so .populate('category') threw MissingSchemaError. See the fuller comment in
+// app/(shop)/products/[slug]/page.jsx for why a direct import (not a transitive one via some
+// other route) is the reliable fix.
+import Category from '@/models/Category';
 import { generateSlug, buildProductQuery, paginateQuery, computeHarvestingSeason } from '@/lib/utils';
 import { hasPermission, isAdminRole } from '@/lib/permissions';
 import { syncHarvestingSeasonStatus } from '@/lib/harvestSeason';

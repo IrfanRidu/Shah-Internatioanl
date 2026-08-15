@@ -11,8 +11,18 @@ const ShipmentItemSchema = new mongoose.Schema({
   productName: String,
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
   botanicalName: String,
+  // batch 17 (R1/R2/R3) — snapshot of the selected catalog Product's own category NAME (Product.
+  // category -> Category.name; a storefront catalog category like "Fresh Fruits", NOT the same
+  // thing as the shipment-level ExportCategory used for incentives/document-format selection),
+  // taken at selection time — same auto-fill-then-independently-editable pattern as botanicalName
+  // /hsCode above. Deliberately a snapshot, not a live join: it survives the source Product being
+  // edited/deleted later, and lets the category-wise totals (shipment editor's "Category Wise
+  // Product Details" section, and BD Invoice's per-category rows) be computed client-side with no
+  // extra fetch as the admin adds/edits rows. Rows never matched to a catalog product (manually
+  // typed product names) simply have no category and group under "Uncategorized".
+  category: String,
   hsCode: String, // batch 7 (R1) — per-product HS code, shown as its own column (Shipment Details/
-                   // Packing List when enabled) or as a sub-line under the name (BD Invoice)
+                   // Packing List when enabled) or as its own column on BD Invoice too (batch 17)
   ctnSizeKg: Number, // requirement 3: renamed from packSizeKg
   totalCTN: Number,
   // requirement 4: totalCTN × (matching CtnConfig's ctnWeightGm / 1000) — 0/unset when no saved
@@ -172,7 +182,11 @@ const ExportShipmentSchema = new mongoose.Schema({
     uploadedAt: { type: Date, default: Date.now },
   }],
 
-  // Company letterhead (Cloudinary URL uploaded by admin for this buyer/shipment)
+  // Orphaned field from an early design iteration, predating even the old global-Settings
+  // letterhead approach — nothing in the app reads or writes this directly (letterhead now comes
+  // from the shipment's selected exportLicense.letterheadUrl, falling back to the global
+  // Settings.exportLetterheadUrl; see requirement 7 / batch 17). Left in place harmlessly for the
+  // same reason as ExportCategory.bdInvoiceShowHsCode above: no live code path touches it.
   letterheadUrl: String,
 
   // Batch 8 (R5): lets the admin edit the hardcoded declaration paragraph / signatory title on a

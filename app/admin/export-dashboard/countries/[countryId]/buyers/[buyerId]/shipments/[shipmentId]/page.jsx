@@ -12,7 +12,7 @@ import ProductNameCombobox from '@/components/admin/ProductNameCombobox';
 import { generateShipmentDocPDF, generateShipmentDocDOCX, generateShipmentDocXLSX, docTypeLabel, DEFAULT_DOCUMENT_TEXT } from '@/lib/exportDocuments';
 import { calculateShipmentFinancials } from '@/lib/utils';
 import { resolveEffectiveRateBDT, isRateOverrideActive } from '@/lib/incentiveUtils';
-import { AVAILABLE_COLUMNS, COLUMN_LABELS, DOC_LABELS, columnHeaderLabel, getDocumentColumns, shouldShowBdHsCode, avgPrice, shipmentAveragePrice } from '@/lib/exportColumns';
+import { AVAILABLE_COLUMNS, COLUMN_LABELS, DOC_LABELS, columnHeaderLabel, getDocumentColumns, computeCategoryBreakdown, avgPrice, shipmentAveragePrice } from '@/lib/exportColumns';
 import toast from 'react-hot-toast';
 import { resizeImageFile } from '@/lib/clientImageResize';
 
@@ -171,19 +171,23 @@ function ItemsTable({ items, onChange, currency = 'EUR', ctnConfigs = [] }) {
   // botanical name, it deliberately does NOT clobber an hsCode the admin already typed in for this row
   // just because the newly-selected product happens not to have one saved (R1).
   const selectProductForRow = (i, product) => {
-    const fields = { productName: product.name, botanicalName: product.scientificName || '' };
+    // R1/R2/R3: also snapshot productId + the catalog category's name, so category-wise totals
+    // (the "Category Wise Product Details" section and BD Invoice's per-category rows) can be
+    // computed instantly from `items` with no extra fetch. /api/products already populates
+    // `category` with { _id, name, slug }, so `product.category?.name` is available right here.
+    const fields = { productName: product.name, botanicalName: product.scientificName || '', productId: product._id, category: product.category?.name || '' };
     if (product.hsCode) fields.hsCode = product.hsCode;
     updateFields(i, fields);
   };
 
   const addRow = () => {
     const slNo = items.length + 1;
-    onChange([...items, { slNo, productName: '', botanicalName: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
+    onChange([...items, { slNo, productName: '', botanicalName: '', productId: '', category: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
   };
   const removeRow = (i) => onChange(items.filter((_, idx) => idx !== i));
   const addFromProduct = (product) => {
     const slNo = items.length + 1;
-    onChange([...items, { slNo, productName: product.name, botanicalName: product.scientificName || '', hsCode: product.hsCode || '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
+    onChange([...items, { slNo, productName: product.name, botanicalName: product.scientificName || '', productId: product._id, category: product.category?.name || '', hsCode: product.hsCode || '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
   };
 
   const grandCTN = items.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0);
@@ -313,7 +317,7 @@ const DOC_COLUMN_WIDTH = {
   unitPrice: 'w-28', averagePrice: 'w-28', totalValue: 'w-32',
 };
 
-function ReadOnlyItemsView({ items, columns, currency = 'EUR' }) {
+function ReadOnlyItemsView({ items, columns, currency = 'EUR', salesTerm }) {
   const visible = (items || []).filter(r => r.productName);
   const grand = {
     totalCTN: visible.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0),
@@ -349,7 +353,7 @@ function ReadOnlyItemsView({ items, columns, currency = 'EUR' }) {
           <tr className="bg-gray-900 text-white">
             <th className="px-3 py-2.5 text-center w-12">SL NO.</th>
             <th className="px-3 py-2.5 text-left w-56">Name of Products (Botanical Name)</th>
-            {columns.map(k => <th key={k} className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH[k] || 'w-28'}`}>{columnHeaderLabel(k, currency)}</th>)}
+            {columns.map(k => <th key={k} className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH[k] || 'w-28'}`}>{columnHeaderLabel(k, currency, salesTerm)}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -376,9 +380,12 @@ function ReadOnlyItemsView({ items, columns, currency = 'EUR' }) {
 // ReadOnlyItemsView above, these ARE inputs (Name/H.S. Code/Total CTN/Quantity KG/Unit Price are
 // all "admin will be able to add these fields manually" per R4) — but Total Value is always
 // derived (qty × price), never a free input, matching R4's "filled automatically" wording for that
-// one field specifically. H.S. Code renders as a second line under the product name, not its own
-// column — that's how it appears on the actual reference invoice.
-function BdInvoiceTable({ items, onChange, columns, showHsCode, currency = 'EUR' }) {
+// one field specifically. Batch 17 (R3): each row is now a PRODUCT CATEGORY (auto-seeded from
+// computeCategoryBreakdown, one row per category found in Shipment Details — see
+// seedBdItemsFromShipment above), not an individual product, so there's no botanical name concept
+// here at all any more; H.S. Code is now a normal column (via `has('hsCode')`, driven by
+// `columns` exactly like every other field here) instead of a second line under the name.
+function BdInvoiceTable({ items, onChange, columns, currency = 'EUR', salesTerm }) {
   const has = (k) => columns.includes(k);
   // Only recompute totalValue when the fields that actually drive it change — editing productName,
   // hsCode, or totalCTN must NOT touch it. Without this gate, editing e.g. the product name on a
@@ -402,7 +409,7 @@ function BdInvoiceTable({ items, onChange, columns, showHsCode, currency = 'EUR'
     quantityKg: items.reduce((a, r) => a + (Number(r.quantityKg) || 0), 0),
     totalValue: items.reduce((a, r) => a + (Number(r.totalValue) || 0), 0),
   };
-  if (!items.length) return <p className="text-sm text-gray-400 italic py-6 text-center">Pick an Export Category and add products in Shipment Details — this table seeds itself from there automatically</p>;
+  if (!items.length) return <p className="text-sm text-gray-400 italic py-6 text-center">Add products in Shipment Details — this table seeds itself automatically, one row per product category</p>;
   return (
     <div>
       <div className="overflow-x-auto rounded-xl border border-gray-100 dark:border-gray-700">
@@ -413,12 +420,13 @@ function BdInvoiceTable({ items, onChange, columns, showHsCode, currency = 'EUR'
           <thead>
             <tr className="bg-gray-900 text-white">
               <th className="px-3 py-2.5 text-center w-12">SL NO.</th>
-              <th className="px-3 py-2.5 text-left w-52">Name of Products (Botanical Name)</th>
+              <th className="px-3 py-2.5 text-left w-52">Name of Products</th>
+              {has('hsCode') && <th className={`px-3 py-2.5 text-left whitespace-nowrap ${DOC_COLUMN_WIDTH.hsCode}`}>HS Code</th>}
               {has('totalCTN') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.totalCTN}`}>Total CTN</th>}
               {has('quantityKg') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.quantityKg}`}>Quantity KG</th>}
-              {has('unitPrice') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.unitPrice}`}>{columnHeaderLabel('unitPrice', currency)}</th>}
-              {has('averagePrice') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.averagePrice}`}>{columnHeaderLabel('averagePrice', currency)}</th>}
-              {has('totalValue') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.totalValue}`}>{columnHeaderLabel('totalValue', currency)}</th>}
+              {has('unitPrice') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.unitPrice}`}>{columnHeaderLabel('unitPrice', currency, salesTerm)}</th>}
+              {has('averagePrice') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.averagePrice}`}>{columnHeaderLabel('averagePrice', currency, salesTerm)}</th>}
+              {has('totalValue') && <th className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH.totalValue}`}>{columnHeaderLabel('totalValue', currency, salesTerm)}</th>}
               <th className="w-9"></th>
             </tr>
           </thead>
@@ -427,9 +435,9 @@ function BdInvoiceTable({ items, onChange, columns, showHsCode, currency = 'EUR'
               <tr key={i} className="border-b border-gray-100 dark:border-gray-800">
                 <td className="px-3 py-2 text-center text-gray-500 font-medium">{i + 1}</td>
                 <td className="px-2 py-2">
-                  <input value={item.productName || ''} onChange={e => updateRow(i, 'productName', e.target.value)} className="input-field py-1.5 text-xs w-full mb-1.5" placeholder="e.g. Vegetables & Fruits" />
-                  {showHsCode && <input value={item.hsCode || ''} onChange={e => updateRow(i, 'hsCode', e.target.value)} className="input-field py-1.5 text-xs w-full" placeholder="H.S Code" />}
+                  <input value={item.productName || ''} onChange={e => updateRow(i, 'productName', e.target.value)} className="input-field py-1.5 text-xs w-full" placeholder="e.g. Fresh Fruits" />
                 </td>
+                {has('hsCode') && <td className="px-2 py-2"><input value={item.hsCode || ''} onChange={e => updateRow(i, 'hsCode', e.target.value)} className="input-field py-1.5 text-xs w-full" placeholder="HS Code" /></td>}
                 {has('totalCTN') && <td className="px-2 py-2"><input type="number" value={item.totalCTN || ''} onChange={e => updateRow(i, 'totalCTN', e.target.value)} className="input-field px-1.5 py-1.5 text-xs w-full text-right" /></td>}
                 {has('quantityKg') && <td className="px-2 py-2"><input type="number" value={item.quantityKg || ''} onChange={e => updateRow(i, 'quantityKg', e.target.value)} className="input-field px-1.5 py-1.5 text-xs w-full text-right" /></td>}
                 {has('unitPrice') && <td className="px-2 py-2"><input type="number" value={item.unitPrice || ''} onChange={e => updateRow(i, 'unitPrice', e.target.value)} className="input-field px-1.5 py-1.5 text-xs w-full text-right" /></td>}
@@ -442,6 +450,7 @@ function BdInvoiceTable({ items, onChange, columns, showHsCode, currency = 'EUR'
           <tfoot>
             <tr className="bg-gray-900 text-white text-xs font-bold">
               <td colSpan={2} className="px-3 py-2.5 text-right">Grand Total:</td>
+              {has('hsCode') && <td></td>}
               {has('totalCTN') && <td className="px-3 py-2.5 text-right">{grand.totalCTN}</td>}
               {has('quantityKg') && <td className="px-3 py-2.5 text-right">{grand.quantityKg.toFixed(1)}</td>}
               {has('unitPrice') && <td></td>}
@@ -460,7 +469,7 @@ function BdInvoiceTable({ items, onChange, columns, showHsCode, currency = 'EUR'
 }
 
 // ─── Main page ──────────────────────────────────────────────────────────────
-const EMPTY = () => Array.from({ length: 3 }, (_, i) => ({ slNo: i + 1, productName: '', botanicalName: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }));
+const EMPTY = () => Array.from({ length: 3 }, (_, i) => ({ slNo: i + 1, productName: '', botanicalName: '', productId: '', category: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }));
 
 export default function ShipmentDetailPage() {
   const { countryId, buyerId, shipmentId } = useParams();
@@ -470,12 +479,15 @@ export default function ShipmentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('details');
   const [buyer, setBuyer] = useState(null);
+  // Batch 17 (R7): letterheadUrl is now READ-ONLY here — a passive fallback for any shipment with
+  // no Export License selected yet. Its own upload UI was removed; the one remaining place to
+  // upload a company letterhead is the Export License editor (components/admin/export-settings/
+  // ExportLicenseSection.jsx) — see effectiveLetterheadUrl below for how the two combine.
   const [letterheadUrl, setLetterheadUrl] = useState('');
   const [initialBalance, setInitialBalance] = useState(0);
   // Batch 7 (R1) — read-only reference, sourced from Settings (edited on the Export Dashboard home
   // page, not per-shipment — see app/admin/export-dashboard/page.jsx).
   const [exporterInfo, setExporterInfo] = useState({ exporterName: 'Shah International', exporterAddress: '' });
-  const [uploadingLH, setUploadingLH] = useState(false);
   const [docStyle, setDocStyle] = useState('letterhead'); // 'letterhead' | 'plain' — shared by Print & Download, all 3 doc types
   const [downloadingDoc, setDownloadingDoc] = useState(null); // which baseDocType is currently generating a document, or null
   // Batch 8 (R5): PDF/DOCX/XLSX — one shared format choice across all 3 doc types, same pattern as docStyle above.
@@ -611,8 +623,10 @@ export default function ShipmentDetailPage() {
 
   useEffect(() => {
     fetch(`/api/export/buyers/${buyerId}`).then(r => r.json()).then(d => setBuyer(d.buyer));
-    // Company letterhead is a GLOBAL setting now (issue 39) — uploaded once, used for every shipment
-    // until replaced, rather than re-uploaded per shipment. Always load the current one on mount.
+    // Batch 17 (R7): this global Settings letterhead is now a passive FALLBACK only, for a
+    // shipment with no Export License selected — its own upload UI is gone; the one place to
+    // actually upload a company letterhead is the Export License editor. Still load the current
+    // fallback value on mount so effectiveLetterheadUrl below has it available if needed.
     // Also grab the persisted Export Analytics Initial Balance (issue 46) so this editor's live
     // Available Balance / Shipment Margin / Net Profit preview matches what the server will compute.
     // Requirement 5: also grab the 6 shipment-option lists for the logistics fields' suggestions.
@@ -746,34 +760,6 @@ export default function ShipmentDetailPage() {
     } else toast.error(d.message);
   };
 
-  const handleLetterheadUpload = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setUploadingLH(true);
-    try {
-      // High-resolution ceiling (used as the actual PDF page background — see lib/pdfLetterhead.js)
-      // — still resized client-side first, see resizeImageFile's own comment on why that matters.
-      const dataUrl = await resizeImageFile(file, { maxDimension: 2000, quality: 0.88 });
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'letterheads' }) });
-      const data = await res.json();
-      if (data.success) {
-        // Save GLOBALLY — this is the one company letterhead, reused for every shipment until
-        // replaced again, not something re-uploaded per shipment (issue 39).
-        const settingsRes = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exportLetterheadUrl: data.url, exportLetterheadUpdatedAt: new Date() }) });
-        const settingsData = await settingsRes.json();
-        if (settingsData.success) {
-          setLetterheadUrl(data.url);
-          toast.success('Company letterhead updated — now used on every shipment');
-        } else {
-          toast.error('Uploaded, but failed to save as the company letterhead');
-        }
-      } else toast.error(data.message || 'Upload failed');
-    } catch (err) {
-      toast.error(err.message || 'Upload failed');
-    } finally {
-      setUploadingLH(false);
-    }
-  };
-
   const handlePrint = (baseDocType) => {
     if (isNew) { toast.error('Save the shipment first'); return; }
     const docType = `${baseDocType}-${docStyle}`;
@@ -881,27 +867,34 @@ export default function ShipmentDetailPage() {
   const liveShipmentAveragePrice = shipmentAveragePrice(form.items);
   const selectedCategory = exportCategories.find(c => c._id === form.exportCategory) || null;
   const itemsTotalValue = form.items.reduce((a, r) => a + (Number(r.totalValue) || 0), 0);
+  // Batch 17 (R1/R2/R3): live, per-PRODUCT-category totals (Product.category — the catalog
+  // category snapshotted on each row at selection time — NOT the same thing as `selectedCategory`
+  // above, which is this shipment's own single Export Category used for incentives/document
+  // format). Powers the "Category Wise Product Details" section below AND BD Invoice's auto-seed.
+  const categoryBreakdown = computeCategoryBreakdown(form.items);
 
-  // R4: BD Invoice's row is computed fresh from the Export Category + these totals. totalValue is
-  // seeded from the EXACT itemsTotalValue, not quantityKg × the rounded (2dp) display unit price —
-  // multiplying a rounded per-kg price back out across a potentially large quantity can drift well
-  // past MISMATCH_TOLERANCE (e.g. a 0.005 rounding error × 2000kg = 10, not 0.01), which would
-  // falsely flag an auto-synced row as "mismatched" even though the admin hasn't touched anything.
-  // Once the admin actually edits qty or price themselves, BdInvoiceTable's updateRow correctly
-  // switches to computing totalValue as qty × price from then on (that row is no longer auto-synced
-  // at that point anyway — see setBdItems below).
+  // Batch 17 (R3): BD Invoice's rows are now computed fresh from the PRODUCT-category breakdown
+  // (categoryBreakdown, above) — one row per distinct product category found in Shipment Details —
+  // instead of a single row named after the shipment's Export Category. Each row's totalValue is
+  // seeded from that group's EXACT summed totalValue, not quantityKg × the rounded (2dp) display
+  // unit price — multiplying a rounded per-kg price back out across a potentially large quantity
+  // can drift well past MISMATCH_TOLERANCE (e.g. a 0.005 rounding error × 2000kg = 10, not 0.01),
+  // which would falsely flag an auto-synced row as "mismatched" even though the admin hasn't
+  // touched anything. Once the admin actually edits qty or price themselves, BdInvoiceTable's
+  // updateRow correctly switches to computing totalValue as qty × price from then on (that row is
+  // no longer auto-synced at that point anyway — see setBdItems below). HS Code seeds from the
+  // first non-empty HS code found among that category's own items — a sensible starting point;
+  // the cell stays admin-editable afterward exactly like every other BD Invoice field.
   const seedBdItemsFromShipment = () => {
-    const unitPrice = +(liveShipmentAveragePrice || 0).toFixed(2);
-    const quantityKg = liveTotalNetWeightKg || '';
-    return [{
-      slNo: 1,
-      productName: selectedCategory?.name || '',
-      hsCode: selectedCategory?.hsCode || '',
-      totalCTN: liveTotalCTN || '',
-      quantityKg,
-      unitPrice: unitPrice || '',
-      totalValue: +itemsTotalValue.toFixed(2),
-    }];
+    return categoryBreakdown.map((g, i) => ({
+      slNo: i + 1,
+      productName: g.category,
+      hsCode: g.hsCode || '',
+      totalCTN: g.totalCTN || '',
+      quantityKg: g.quantityKg || '',
+      unitPrice: g.quantityKg ? +g.avgPrice.toFixed(2) : '',
+      totalValue: +g.totalValue.toFixed(2),
+    }));
   };
 
   // Batch 7 round 2: BD Invoice used to seed ONCE and then freeze forever, which meant a shipment
@@ -915,10 +908,24 @@ export default function ShipmentDetailPage() {
   // — it's the admin's own independently-owned data at that point, which is what makes the mismatch
   // banner below meaningful. "Re-fill from Shipment Details" (the button in the BD Invoice tab) is
   // the only other way bdItemsLocked goes back to false.
+  // Batch 17 (R3): a plain string signature of categoryBreakdown, NOT the array itself, is used as
+  // this effect's dependency below — categoryBreakdown is a fresh array reference every render, so
+  // depending on it directly would re-run this effect (harmlessly, but pointlessly) on every single
+  // keystroke anywhere on the page. A string compares by value, so React's dependency check
+  // correctly treats two renders with identical category groupings/totals as "unchanged" even
+  // though a new array was computed for each. This also fixes a real (if narrow) gap the previous
+  // dependency list (liveTotalCTN/liveTotalNetWeightKg/liveShipmentAveragePrice/itemsTotalValue —
+  // all shipment-WIDE aggregates) had: those 4 numbers can stay identical even when which category
+  // a row belongs to changes (e.g. re-picking a different-category product with the same CTN/qty/
+  // value) — this signature is sensitive to exactly that, since it's built from the same grouped
+  // data seedBdItemsFromShipment() itself uses.
+  const categoryBreakdownSignature = categoryBreakdown
+    .map(g => `${g.category}|${g.totalCTN}|${g.quantityKg}|${g.totalValue}|${g.hsCode}`)
+    .join('~');
+
   useEffect(() => {
     if (loading || form.bdItemsLocked) return;
-    const hasSomethingToShow = !!form.exportCategory || liveTotalCTN > 0;
-    const next = hasSomethingToShow ? seedBdItemsFromShipment() : [];
+    const next = categoryBreakdown.length > 0 ? seedBdItemsFromShipment() : [];
     // Only touch state when the computed row is actually different from what's already there —
     // avoids re-triggering this effect (and thus a render loop) on every single render.
     const current = form.bdItems || [];
@@ -930,7 +937,7 @@ export default function ShipmentDetailPage() {
       Number(r.totalValue || 0) === Number(next[i]?.totalValue || 0));
     if (!unchanged) setFormState(p => ({ ...p, bdItems: next }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, form.bdItemsLocked, form.exportCategory, liveTotalCTN, liveTotalNetWeightKg, liveShipmentAveragePrice, itemsTotalValue]);
+  }, [loading, form.bdItemsLocked, categoryBreakdownSignature]);
 
   // The ONLY way BdInvoiceTable's onChange fires is from the admin's own click/keystroke inside it
   // (updateRow/addRow/removeRow) — the auto-sync effect above sets bdItems directly and never goes
@@ -1171,21 +1178,6 @@ export default function ShipmentDetailPage() {
         </div>
       </div>
 
-      {/* Letterhead upload — a GLOBAL company setting (issue 39): upload once here, it's reused on
-          every shipment's printed/downloaded documents until it's replaced again. Also manageable
-          from the main Export Dashboard page without opening any specific shipment. */}
-      <div className="bg-amber-50 dark:bg-amber-900/20 rounded-2xl border border-amber-200 p-4 mb-5 flex items-center gap-4 flex-wrap">
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Company Letterhead (fallback when no Export License is selected)</p>
-          <p className="text-xs text-amber-600 mt-0.5">Upload once (PNG/JPG) — used on every shipment's documents by default. Once a shipment has an Export License selected above, that license's own letterhead is used instead.</p>
-          {letterheadUrl && <p className="text-xs text-green-600 mt-1">✓ Currently set</p>}
-        </div>
-        <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-amber-300 rounded-xl cursor-pointer text-sm font-medium text-amber-700 hover:bg-amber-50 transition-all">
-          <Upload className="w-4 h-4" /> {uploadingLH ? 'Uploading...' : letterheadUrl ? 'Replace Company Letterhead' : 'Upload Company Letterhead'}
-          <input type="file" accept="image/*" onChange={handleLetterheadUpload} className="hidden" disabled={uploadingLH} />
-        </label>
-      </div>
-
       {/* Document tabs */}
       <div className="flex gap-2 mb-5 border-b border-gray-100 dark:border-gray-800 pb-2 overflow-x-auto">
         {tabs.map(t => (
@@ -1228,7 +1220,7 @@ export default function ShipmentDetailPage() {
               </div>
               <Input label={`Freight Cost (${form.baseCurrency})`} type="number" min="0" value={form.freightCost} onChange={e => set('freightCost', e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))} hint="Same field as Shipment Details' Financial Analysis section" />
             </div>
-            <ReadOnlyItemsView items={form.items} columns={getDocumentColumns(selectedCategory, 'packingList')} currency={form.baseCurrency} />
+            <ReadOnlyItemsView items={form.items} columns={getDocumentColumns(selectedCategory, 'packingList')} currency={form.baseCurrency} salesTerm={form.salesTerm} />
           </div>
         )}
 
@@ -1254,7 +1246,7 @@ export default function ShipmentDetailPage() {
               <span className="text-blue-700 dark:text-blue-300 font-semibold">Currency: {form.baseCurrency}</span>
               <span className="text-blue-500">1 USD = {rate ? rate.toFixed(4) : '...'} {form.baseCurrency}</span>
             </div>
-            <ReadOnlyItemsView items={form.items} columns={getDocumentColumns(selectedCategory, 'buyerInvoice')} currency={form.baseCurrency} />
+            <ReadOnlyItemsView items={form.items} columns={getDocumentColumns(selectedCategory, 'buyerInvoice')} currency={form.baseCurrency} salesTerm={form.salesTerm} />
             <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl text-sm font-semibold text-green-700">
               Total Invoice Value: {itemsTotalValue.toFixed(2)} {form.baseCurrency}
               <span className="ml-3 text-xs text-gray-500 font-normal">≈ USD {rate ? (itemsTotalValue / rate).toFixed(2) : '...'}</span>
@@ -1311,7 +1303,7 @@ export default function ShipmentDetailPage() {
               </div>
               <button onClick={handleReseedBd} className="text-xs text-brand hover:underline font-semibold whitespace-nowrap">↻ Re-fill from Shipment Details</button>
             </div>
-            <BdInvoiceTable items={form.bdItems} onChange={setBdItems} columns={getDocumentColumns(selectedCategory, 'bdInvoice')} showHsCode={shouldShowBdHsCode(selectedCategory)} currency={form.baseCurrency} />
+            <BdInvoiceTable items={form.bdItems} onChange={setBdItems} columns={getDocumentColumns(selectedCategory, 'bdInvoice')} currency={form.baseCurrency} salesTerm={form.salesTerm} />
             <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl text-sm font-semibold text-green-700">
               Total BD Invoice Value: {bdTotalValue.toFixed(2)} {form.baseCurrency}
               <span className="ml-3 text-xs text-gray-500 font-normal">≈ USD {rate ? (bdTotalValue / rate).toFixed(2) : '...'}</span>
@@ -1331,28 +1323,16 @@ export default function ShipmentDetailPage() {
                 <Input label="Shipment No" value={form.shipmentNo} onChange={e => set('shipmentNo', e.target.value)} />
                 <Input label="Contract No" value={form.contractNo} onChange={e => set('contractNo', e.target.value)} />
                 <Input label="Invoice No" value={form.invoiceNo} onChange={e => set('invoiceNo', e.target.value)} />
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Shipment Date</label>
-                  <input type="date" value={form.dateStr} onChange={e => set('dateStr', e.target.value)} className="input-field py-2 text-sm" />
-                </div>
+                <Input label="Shipment Date" type="date" value={form.dateStr} onChange={e => set('dateStr', e.target.value)} />
                 <Input label="TIN" value={form.tinNo} onChange={e => set('tinNo', e.target.value)} />
                 <Input label="BIN" value={form.binNo} onChange={e => set('binNo', e.target.value)} />
                 <Input label="ERC" value={form.ercNo} onChange={e => set('ercNo', e.target.value)} />
                 <Input label="EXP No" value={form.expNo} onChange={e => set('expNo', e.target.value)} hint="Enter the full EXP number as issued (year included, e.g. 000367/2026) — nothing is appended to this automatically" />
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">EXP Date</label>
-                  <input type="date" value={form.expDateStr} onChange={e => set('expDateStr', e.target.value)} className="input-field py-2 text-sm" />
-                </div>
+                <Input label="EXP Date" type="date" value={form.expDateStr} onChange={e => set('expDateStr', e.target.value)} />
                 <Input label="AWB No" value={form.awbNo} onChange={e => set('awbNo', e.target.value)} />
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">AWB Date</label>
-                  <input type="date" value={form.awbDateStr} onChange={e => set('awbDateStr', e.target.value)} className="input-field py-2 text-sm" />
-                </div>
+                <Input label="AWB Date" type="date" value={form.awbDateStr} onChange={e => set('awbDateStr', e.target.value)} />
                 <Input label="PC No" value={form.pcNo} onChange={e => set('pcNo', e.target.value)} />
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">PC Date</label>
-                  <input type="date" value={form.pcDateStr} onChange={e => set('pcDateStr', e.target.value)} className="input-field py-2 text-sm" />
-                </div>
+                <Input label="PC Date" type="date" value={form.pcDateStr} onChange={e => set('pcDateStr', e.target.value)} />
                 <Input label="REX No" value={form.rexNo} onChange={e => set('rexNo', e.target.value)} hint="Used in the Buyer's Invoice declaration as BDREX + this number" />
               </div>
             </div>
@@ -1438,6 +1418,56 @@ export default function ShipmentDetailPage() {
                 <p className="text-xs text-gray-400 mt-0.5">The single source of truth — Packing List and Buyer's Invoice mirror this table exactly; BD Invoice starts from its totals</p>
               </div>
               <ItemsTable items={form.items} onChange={v => set('items', v)} currency={form.baseCurrency} ctnConfigs={ctnConfigs} />
+            </div>
+
+            {/* Batch 17 (R1/R2): live per-product-category totals, computed from the table above via
+                computeCategoryBreakdown (lib/exportColumns.js) — the exact same helper BD Invoice's
+                auto-seed uses, so the two can never disagree with each other. */}
+            <div>
+              <div className="mb-4">
+                <h3 className="font-bold text-gray-900 dark:text-white">Category Wise Product Details</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Auto-calculated from the Products table above, grouped by each product's own catalog category</p>
+              </div>
+              {categoryBreakdown.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-6 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">Add products above to see category-wise totals</p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-gray-100 dark:border-gray-700">
+                  <table className="w-full text-xs" style={{ minWidth: '640px' }}>
+                    <thead>
+                      <tr className="bg-gray-900 text-white">
+                        <th className="px-3 py-2.5 text-left">Product Category</th>
+                        <th className="px-3 py-2.5 text-right">Total CTN</th>
+                        <th className="px-3 py-2.5 text-right">Total CTN Wt (kg)</th>
+                        <th className="px-3 py-2.5 text-right">Qty (kg)</th>
+                        <th className="px-3 py-2.5 text-right">Avg Price ({form.baseCurrency})</th>
+                        <th className="px-3 py-2.5 text-right">Total ({form.baseCurrency})</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categoryBreakdown.map(g => (
+                        <tr key={g.category} className="border-b border-gray-100 dark:border-gray-800">
+                          <td className="px-3 py-2.5 font-medium text-gray-700 dark:text-gray-200">{g.category}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-600 dark:text-gray-300">{g.totalCTN}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-600 dark:text-gray-300">{g.totalCtnWeightKg.toFixed(2)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-600 dark:text-gray-300">{g.quantityKg.toFixed(1)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-600 dark:text-gray-300">{g.avgPrice.toFixed(2)}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold text-gray-900 dark:text-white">{g.totalValue.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-900 text-white font-bold">
+                        <td className="px-3 py-2.5 text-right">Grand Total :</td>
+                        <td className="px-3 py-2.5 text-right">{liveTotalCTN}</td>
+                        <td className="px-3 py-2.5 text-right">{liveTotalCtnWeightKg.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right">{liveTotalNetWeightKg.toFixed(1)}</td>
+                        <td className="px-3 py-2.5 text-right">{liveShipmentAveragePrice.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right text-green-400">{itemsTotalValue.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </div>
 
             <h3 className="font-bold text-gray-900 dark:text-white">Financial Details & Profit Analysis</h3>
