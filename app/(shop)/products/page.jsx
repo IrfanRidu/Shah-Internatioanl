@@ -5,6 +5,8 @@ import Loader from '@/components/ui/Loader';
 import Pagination from '@/components/ui/Pagination';
 import { Search, SlidersHorizontal, Leaf, X } from 'lucide-react';
 import { useBuyerType } from '@/contexts/BuyerTypeContext';
+import PromoBannerStrip from '@/components/home/PromoBannerStrip';
+import BannerPopup from '@/components/home/BannerPopup';
 
 export default function ProductsPage() {
   const { buyerType } = useBuyerType();
@@ -16,6 +18,10 @@ export default function ProductsPage() {
   const [pages, setPages] = useState(1);
   const [filters, setFilters] = useState({ search: '', category: '', harvesting: '', sort: '-createdAt' });
   const [showFilters, setShowFilters] = useState(false);
+  // Batch 18 (R32): promotional/side + popup banners scoped to this page (position=products,
+  // matching the same 'all'-always-included pattern the API applies server-side).
+  const [promoBanners, setPromoBanners] = useState([]);
+  const [popupBanners, setPopupBanners] = useState([]);
 
   const [error, setError] = useState(null);
 
@@ -58,6 +64,13 @@ export default function ProductsPage() {
     fetch('/api/categories').then(r => r.json()).then(d => setCategories(d.categories || []));
   }, []);
 
+  // Batch 18 (R32): fetched once on mount — this page doesn't need to react to filter/page changes
+  // the way products does, banners aren't scoped to a search/filter state.
+  useEffect(() => {
+    fetch('/api/banners?type=promotional,side&position=products').then(r => r.json()).then(d => setPromoBanners(d.banners || [])).catch(() => {});
+    fetch('/api/banners?type=popup&position=products').then(r => r.json()).then(d => setPopupBanners(d.banners || [])).catch(() => {});
+  }, []);
+
   const setFilter = (k, v) => setFilters(p => ({ ...p, [k]: v }));
 
   return (
@@ -67,6 +80,10 @@ export default function ProductsPage() {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>All Products</h1>
         <p className="text-gray-500">{total} fresh products available{buyerType === 'international' ? ' for import' : ' for delivery'}</p>
       </div>
+
+      {/* Batch 18 (R32): promotional/side banners scoped to this page (position=products) */}
+      <PromoBannerStrip banners={promoBanners} bare />
+      <BannerPopup banners={popupBanners} />
 
       {/* Search & filter bar */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">

@@ -15,11 +15,19 @@ export async function GET(request) {
     await connectDB();
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type');
+    // Batch 18 (R32): `position` narrows to banners meant for a specific page (home/products) —
+    // a banner set to 'all' always matches regardless of what's requested, same as before this
+    // param existed for callers that don't pass it at all (no position filter applied).
+    const position = searchParams.get('position');
     const adminView = searchParams.get('adminView');
     const session = await getServerSession(authOptions);
     const isAdmin = isAdminRole(session);
     const query = adminView && isAdmin ? {} : { isActive: true };
-    if (type) query.type = type;
+    // Comma-separated type support (e.g. `?type=promotional,side`) — lets a single request cover
+    // more than one type at once, since promotional and side banners render through the same
+    // shared strip component on the consuming side.
+    if (type) query.type = type.includes(',') ? { $in: type.split(',') } : type;
+    if (position) query.position = { $in: [position, 'all'] };
     const banners = await Banner.find(query).sort({ displayOrder: 1 }).lean();
     return NextResponse.json({ success: true, banners });
   } catch (error) {

@@ -35,7 +35,7 @@ async function getHomeData() {
     : session?.user?.buyerType === 'international' ? { availableForInternational: { $ne: false } }
     : {};
 
-  const [categories, allCategories, flashSales, sections, heroBanners] = await Promise.all([
+  const [categories, allCategories, flashSales, sections, heroBanners, promoBanners, popupBanners] = await Promise.all([
     Category.find({ isActive: true }).sort({ displayOrder: 1 }).limit(8).lean(),
     // Uncapped — issue 13 wants EVERY category represented as its own section below, not just the
     // top 8 shown as browse tiles.
@@ -63,6 +63,11 @@ async function getHomeData() {
       .limit(5)
       .lean(),
     Banner.find({ isActive: true, type: 'hero' }).sort({ displayOrder: 1 }).lean(),
+    // Batch 18 (R32): promotional + side banners render identically (see PromoBannerStrip's own
+    // comment for why) — one query covers both types. position 'all' banners are included on every
+    // page, same reasoning as 'home' ones.
+    Banner.find({ isActive: true, type: { $in: ['promotional', 'side'] }, position: { $in: ['home', 'all'] } }).sort({ displayOrder: 1 }).lean(),
+    Banner.find({ isActive: true, type: 'popup', position: { $in: ['home', 'all'] } }).sort({ displayOrder: 1 }).lean(),
   ]);
 
   // Issue 13: a single, page-wide "already shown" set so no product repeats anywhere on the
@@ -115,7 +120,7 @@ async function getHomeData() {
     categorySections.push({ category: cat, products });
   }
 
-  return { categories, featuredProducts, flashSales, sections, heroBanners, harvestingProducts, preOrderProducts, categorySections };
+  return { categories, featuredProducts, flashSales, sections, heroBanners, promoBanners, popupBanners, harvestingProducts, preOrderProducts, categorySections };
 }
 
 export default async function HomePage() {

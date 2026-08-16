@@ -1120,7 +1120,59 @@ can address — consistent with what Batches 15/16 independently concluded. The 
 `chrome-extension` service-worker console error in the same log is a browser extension interacting
 with the site's own cache API, entirely outside this app's control.
 
-## 26. Setup Reminder
+## 26. Batch 18 — Ka Form Section E Date Removal, Banner System Wired Up (R32)
+
+Full detail in AGENT_PROGRESS_18.md.
+
+**Ka Form Section E "EXP No. & Date" no longer shows a date (R32-1).** A duplicated-looking EXP
+number followed by a full date (e.g. "000367/2026" on one line, "05.08.2026" on the next) was
+reported for both the Bengali and English Ka Form. Root cause: `expNoWithDate()` in
+lib/kaFormDocuments.js unconditionally appended the shipment's expDate (or its date as a fallback)
+under the EXP No. — added in R29 on the assumption that the column header's literal wording ("EXP
+No. & Date") meant a real date value belonged there. This directly contradicted the project's own
+earlier reference research: KA_FORM_AND_STAMP_REFERENCE.md's Section E notes already documented,
+from real government-form samples, that this column "is rendered as {expNo}/{year}, no separate
+date sub-field despite the header's '& Date'". Renamed the function to `expNoCell` and simplified
+it to `s.expNo || ''` — no date ever appended, matching both the reference research and the report.
+Since `sectionERows` (built once, shared by all 4 render outputs — English PDF, Bengali PDF, DOCX,
+XLSX) already fed both languages from one function, this single change fixed all of them at once.
+The column header text itself is untouched — confirmed to be the government form's own official
+wording, not something invented by this app.
+
+**Uploaded banners now actually appear on the site, per type (R32-2).** Reported: banners uploaded
+through the admin panel never appeared anywhere. Root cause for the reported example (hero):
+components/home/HeroSection.jsx accepted a `banners` prop — correctly fetched server-side in
+app/(shop)/page.jsx (`Banner.find({isActive:true, type:'hero'})`) and correctly threaded through
+HomeClientWrapper — but never referenced that prop anywhere in the component body; the default
+hardcoded hero content rendered unconditionally regardless of what was uploaded. Beyond the
+reported hero case, a codebase-wide grep confirmed the other 3 banner types the model already
+supports (promotional/popup/side, plus a `position` field: home/products/all) had ZERO consumption
+anywhere — not fetched, not rendered, anywhere in the app. Since the reported principle was general
+("it should appear according to it's type"), not just the one hero example, all 4 types were wired
+up, not only hero:
+- **hero** — HeroSection now renders the first active hero banner (by displayOrder) as a full
+  replacement of the default section when one exists (full-bleed image via next/image with
+  `priority` since it's the LCP element, title/subtitle/description, one CTA button) — falls back
+  to the existing default hero, completely unchanged, when no hero banner is configured. Several of
+  the default hero's animated refs (badge, subtitle) are now conditionally rendered too (a banner's
+  subtitle/description are optional fields, unlike the default hero's always-present copy) — the
+  GSAP timeline that animates them was updated to guard each with a null check first, since
+  animating a ref that never mounted would otherwise throw.
+- **promotional + side** — new components/home/PromoBannerStrip.jsx, a horizontal strip of
+  clickable image cards. Documented plainly, not silently invented: the codebase has never
+  established any visual distinction between these two types (there's no sidebar anywhere on the
+  site that would give "side" a literal meaning), so both render through this one shared component.
+  Shown on the homepage (after Categories) and the products page (near the top); a `bare` prop lets
+  the products page embed it without double-nesting the max-w-7xl container it's already inside.
+- **popup** — new components/home/BannerPopup.jsx, a dismissible overlay (not built on
+  components/ui/Modal.jsx, whose title-bar-plus-body style suits admin forms, not an edge-to-edge
+  marketing image) appearing ~1.2s after mount, remembered per-banner-ID via sessionStorage (so a
+  newly-created popup still shows even if an older one was already dismissed this session).
+- **API**: app/api/banners/route.js's GET gained `position` filtering (`home`/`products` always
+  also matches a banner set to `all`) and comma-separated `type` support (`?type=promotional,side`)
+  — purely additive, no change for existing callers that don't pass either param.
+
+## 27. Setup Reminder
 
 ```bash
 npm install

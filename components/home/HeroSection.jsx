@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useBuyerType } from '@/contexts/BuyerTypeContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { gsap } from 'gsap';
@@ -22,16 +23,29 @@ export default function HeroSection({ banners = [] }) {
   const statsRef = useRef(null);
   const floatsRef = useRef([]);
 
+  // Batch 18 (R32): this was the actual reported bug — `banners` was accepted as a prop but never
+  // referenced anywhere below, so an admin-uploaded hero banner never had any effect on what
+  // rendered here, no matter what. Only the first (lowest displayOrder, already sorted by the
+  // query that produced this prop) active hero banner is used — one hero banner replaces the
+  // default section entirely, matching "hero banner should replace the default hero section"; a
+  // rotation between several concurrent hero banners would be a bigger, separate feature.
+  const activeBanner = banners?.[0] || null;
+
   useEffect(() => {
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
-      tl.fromTo(badgeRef.current, { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.6 })
-        .fromTo(titleRef.current.children, { opacity: 0, y: 60, skewY: 3 }, { opacity: 1, y: 0, skewY: 0, stagger: 0.12, duration: 0.8 }, '-=0.3')
-        .fromTo(subRef.current, { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: 0.6 }, '-=0.4')
-        .fromTo(ctaRef.current.children, { opacity: 0, y: 20, scale: 0.95 }, { opacity: 1, y: 0, scale: 1, stagger: 0.1, duration: 0.5 }, '-=0.3')
-        .fromTo(statsRef.current.children, { opacity: 0, y: 20 }, { opacity: 1, y: 0, stagger: 0.08, duration: 0.4 }, '-=0.2');
+      // Batch 18: badgeRef/subRef are now conditionally rendered too (a banner's subtitle/
+      // description are optional fields) — guarded the same way statsRef already is below, since
+      // the default hero always has every one of these but the banner-driven hero might not.
+      if (badgeRef.current) tl.fromTo(badgeRef.current, { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.6 });
+      tl.fromTo(titleRef.current.children, { opacity: 0, y: 60, skewY: 3 }, { opacity: 1, y: 0, skewY: 0, stagger: 0.12, duration: 0.8 }, '-=0.3');
+      if (subRef.current) tl.fromTo(subRef.current, { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: 0.6 }, '-=0.4');
+      tl.fromTo(ctaRef.current.children, { opacity: 0, y: 20, scale: 0.95 }, { opacity: 1, y: 0, scale: 1, stagger: 0.1, duration: 0.5 }, '-=0.3');
+      if (statsRef.current) {
+        tl.fromTo(statsRef.current.children, { opacity: 0, y: 20 }, { opacity: 1, y: 0, stagger: 0.08, duration: 0.4 }, '-=0.2');
+      }
 
-      // Floating emojis
+      // Floating emojis — default hero only, activeBanner has its own real image instead.
       floatsRef.current.forEach((el, i) => {
         if (!el) return;
         gsap.fromTo(el, { opacity: 0, scale: 0 }, { opacity: 0.25, scale: 1, duration: 0.8, delay: 1 + i * 0.15, ease: 'back.out(2)' });
@@ -46,12 +60,12 @@ export default function HeroSection({ banners = [] }) {
         scrub: 0.5,
         onUpdate: (self) => {
           gsap.set(titleRef.current, { y: self.progress * 60 });
-          gsap.set(subRef.current, { y: self.progress * 40 });
+          if (subRef.current) gsap.set(subRef.current, { y: self.progress * 40 });
         },
       });
     }, heroRef);
     return () => ctx.revert();
-  }, []);
+  }, [activeBanner]);
 
   // Admin-editable via Settings → Hero tab (settings.heroStats). Falls back
   // to sensible defaults if the admin hasn't customized them yet. Icons are
@@ -78,6 +92,63 @@ export default function HeroSection({ banners = [] }) {
   const contact = { phone: '+8801681896498', whatsapp: '8801681896498', ...(settings?.contact || {}) };
 
   const emojis = ['🥦', '🍅', '🌽', '🥕', '🍋', '🫑', '🥬', '🫚'];
+
+  // Batch 18 (R32): banner-driven hero — full replacement of the default content below, used
+  // whenever the admin has an active hero banner. Keeps the same badge/title/subtitle/CTA/scroll-
+  // indicator structure (and the same GSAP refs/animation above) for visual and motion continuity
+  // with the rest of the site, rather than looking like a bolted-on, unrelated block.
+  if (activeBanner) {
+    const bg = activeBanner.backgroundColor || '#052e16';
+    const textColor = activeBanner.textColor || '#ffffff';
+    return (
+      <section ref={heroRef} className="relative min-h-[92vh] flex items-center overflow-hidden" style={{ backgroundColor: bg }}>
+        <Image
+          src={activeBanner.image}
+          alt={activeBanner.title}
+          fill
+          priority
+          sizes="100vw"
+          className={`object-cover ${activeBanner.mobileImage ? 'hidden sm:block' : ''}`}
+        />
+        {activeBanner.mobileImage && (
+          <Image src={activeBanner.mobileImage} alt={activeBanner.title} fill priority sizes="100vw" className="object-cover sm:hidden" />
+        )}
+        {/* Scrim for text readability over an arbitrary admin-uploaded photo */}
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.15) 100%)' }} />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 w-full">
+          <div className="max-w-3xl">
+            {activeBanner.subtitle && (
+              <div ref={badgeRef} className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 text-sm font-medium px-4 py-2 rounded-full mb-6" style={{ color: textColor }}>
+                <Leaf className="w-4 h-4" /> {activeBanner.subtitle}
+              </div>
+            )}
+            <h1 ref={titleRef} className="text-5xl md:text-7xl font-bold mb-6 leading-[1.05]" style={{ fontFamily: 'Playfair Display, serif', color: textColor }}>
+              <span className="block">{activeBanner.title}</span>
+            </h1>
+            {activeBanner.description && (
+              <p ref={subRef} className="text-lg md:text-xl mb-8 max-w-xl leading-relaxed" style={{ color: textColor, opacity: 0.85 }}>
+                {activeBanner.description}
+              </p>
+            )}
+            <div ref={ctaRef} className="flex flex-wrap gap-4 mb-14">
+              <Link href={activeBanner.link || '/products'} className="inline-flex items-center gap-2 px-8 py-4 rounded-xl font-semibold text-white text-base transition-all hover:-translate-y-0.5 hover:shadow-2xl" style={{ backgroundColor: 'var(--color-accent)' }}>
+                <ShoppingBag className="w-5 h-5" /> {activeBanner.buttonText || 'Shop Now'} <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* Scroll indicator — same as the default hero, kept for visual consistency */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-bounce">
+          <span className="text-white/40 text-xs">Scroll</span>
+          <div className="w-5 h-8 border border-white/30 rounded-full flex items-start justify-center p-1">
+            <div className="w-1.5 h-1.5 bg-white/50 rounded-full animate-[bounce_1.5s_infinite]" />
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section ref={heroRef} className="relative min-h-[92vh] flex items-center overflow-hidden"

@@ -12,6 +12,8 @@ import Testimonials from '@/components/home/Testimonials';
 import CertificationsSection from '@/components/home/CertificationsSection';
 import PartnersSection from '@/components/home/PartnersSection';
 import FAQSection from '@/components/home/FAQSection';
+import PromoBannerStrip from '@/components/home/PromoBannerStrip';
+import BannerPopup from '@/components/home/BannerPopup';
 
 /**
  * Interleaves multiple active campaigns between the other homepage sections
@@ -31,7 +33,7 @@ import FAQSection from '@/components/home/FAQSection';
  * list, never add one somewhere else, so that guarantee holds no matter what
  * a guest's buyerType turns out to be once it's known client-side.
  */
-function buildHomeSections({ categories, featuredProducts, flashSales, sections, harvestingProducts, preOrderProducts, categorySections, isLocal, buyerType }) {
+function buildHomeSections({ categories, featuredProducts, flashSales, sections, harvestingProducts, preOrderProducts, categorySections, promoBanners, isLocal, buyerType }) {
   const visibleFeatured = featuredProducts.filter(p => isProductVisibleToBuyer(p, buyerType));
   const visibleHarvesting = (harvestingProducts || []).filter(p => isProductVisibleToBuyer(p, buyerType));
   const visiblePreOrder = (preOrderProducts || []).filter(p => isProductVisibleToBuyer(p, buyerType));
@@ -54,6 +56,9 @@ function buildHomeSections({ categories, featuredProducts, flashSales, sections,
 
   const blocks = [
     { key: 'categories', node: <CategorySection categories={categories} /> },
+    // Batch 18 (R32): promotional/side banners — empty array renders nothing (PromoBannerStrip's
+    // own guard), so this is a no-op block on any site with none configured.
+    ...(promoBanners?.length > 0 ? [{ key: 'promo-banners', node: <PromoBannerStrip banners={promoBanners} /> }] : []),
     // Issue 13, in the order specified: Currently Harvesting, then Available for Pre-Order, then
     // one section per category (further down, after Featured/Special Sections).
     ...(visibleHarvesting.length > 0 ? [{
@@ -108,11 +113,11 @@ function buildHomeSections({ categories, featuredProducts, flashSales, sections,
   return result;
 }
 
-export default function HomeClientWrapper({ categories, featuredProducts, flashSales, sections, heroBanners, harvestingProducts, preOrderProducts, categorySections }) {
+export default function HomeClientWrapper({ categories, featuredProducts, flashSales, sections, heroBanners, promoBanners, popupBanners, harvestingProducts, preOrderProducts, categorySections }) {
   const { isLocal, buyerType } = useBuyerType();
   const homeSections = buildHomeSections({
     categories, featuredProducts, flashSales: flashSales || [], sections,
-    harvestingProducts, preOrderProducts, categorySections,
+    harvestingProducts, preOrderProducts, categorySections, promoBanners,
     isLocal, buyerType,
   });
 
@@ -124,6 +129,8 @@ export default function HomeClientWrapper({ categories, featuredProducts, flashS
       <PartnersSection />
       <FAQSection />
       <Testimonials />
+      {/* Batch 18 (R32): fixed-position overlay, order in the tree doesn't matter */}
+      <BannerPopup banners={popupBanners} />
     </>
   );
 }
