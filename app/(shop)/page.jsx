@@ -54,11 +54,11 @@ async function getHomeData() {
     // PriceDisplay ever got a chance to render them. Kept in sync with the SpecialSection populate
     // 4 lines below, which already selected them correctly.
     FlashSale.find({ isActive: { $ne: false }, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
-      .populate({ path: 'items.product', select: 'name images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason availableForLocal availableForInternational', match: buyerVisibilityQuery })
+      .populate({ path: 'items.product', select: 'name localName images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason availableForLocal availableForInternational', match: buyerVisibilityQuery })
       .sort({ createdAt: -1 })
       .lean(),
     SpecialSection.find({ isActive: true, position: { $in: ['home', 'both'] }, ...campaignAudienceQuery })
-      .populate({ path: 'products', select: 'name images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason isFeatured availableForLocal availableForInternational', match: buyerVisibilityQuery })
+      .populate({ path: 'products', select: 'name localName images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason isFeatured availableForLocal availableForInternational', match: buyerVisibilityQuery })
       .sort('displayOrder')
       .limit(5)
       .lean(),

@@ -5,8 +5,8 @@ import { useSession, signOut } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Tag,
-  Image as ImageIcon, Zap, Percent, Settings, BarChart3,
-  Warehouse, Shield, Layers, FileText, LogOut, Leaf, Menu, X,
+  Image as ImageIcon, Zap, Percent, Settings, BarChart3, TrendingUp,
+  Warehouse, Shield, Layers, FileText, LogOut, Leaf, Menu, X, ChevronDown,
   Mail, MessageSquare, Star, Globe2, Ship, History, DollarSign
 } from 'lucide-react';
 import { getPermissions } from '@/lib/permissions';
@@ -58,13 +58,34 @@ const navGroups = [
     ],
   },
   {
-    label: 'Export & Import',
+    // Batch 19 (R33-4/5): renamed from "Export & Import" — Export Categories/Incentives/
+    // Analytics/Archives/Settings are ALL already separate pages/routes (they were previously
+    // reachable only via quick-link buttons duplicated at the top of the main export-dashboard
+    // page itself, not from the sidebar at all) — promoted here to real sidebar items, and that
+    // redundant quick-link row removed from the page (see app/admin/export-dashboard/page.jsx).
+    // "Overview" is the one genuinely new page this adds. "Shipments" is the renamed main page —
+    // exact:true since its href is a PREFIX of every other item below it in this same group
+    // (without it, being on any of those other 7 pages would also highlight "Shipments").
+    label: 'Export Dashboard',
     items: [
-      { href: '/admin/export-dashboard', label: 'Export Dashboard', icon: Globe2 },
+      { href: '/admin/export-dashboard/overview', label: 'Overview', icon: TrendingUp },
+      { href: '/admin/export-dashboard', label: 'Shipments', icon: Globe2, exact: true },
+      { href: '/admin/export-dashboard/categories', label: 'Export Categories', icon: Tag },
       { href: '/admin/export-dashboard/incentives', label: 'Export Incentives', icon: DollarSign },
       { href: '/admin/export-dashboard/analytics', label: 'Export Analytics', icon: BarChart3 },
       { href: '/admin/export-dashboard/archive', label: 'Export Archives', icon: FileText },
       { href: '/admin/export-dashboard/audit-log', label: 'Audit Log & Recycle Bin', icon: History },
+      { href: '/admin/export-dashboard/settings', label: 'Settings', icon: Settings },
+    ],
+  },
+  {
+    // Batch 19 (R33-4): split out into its own top-level section, per "another INDIVIDUAL
+    // section named Import Dashboard" — was previously just one more item nested inside the old
+    // "Export & Import" group. The page itself already exists as a clearly-labeled "Coming Soon"
+    // placeholder (app/admin/import-dashboard/page.jsx) — nothing to build here yet, per the
+    // request ("will remain empty, instructions later").
+    label: 'Import Dashboard',
+    items: [
       { href: '/admin/import-dashboard', label: 'Import Dashboard', icon: Ship },
     ],
   },
@@ -118,6 +139,25 @@ export default function AdminSidebar({ pendingOrders: initialPendingOrders = 0, 
     } catch {}
   }, []);
 
+  // Batch 19 (R33-3): which nav GROUPS (sections) are expanded — independent of `collapsed` above,
+  // which is the whole-sidebar icon-only mode. Default is every group closed, per the request;
+  // persisted the same way `collapsed` already is, so an admin's choice of which sections they
+  // actually use sticks across visits instead of resetting closed every single time.
+  const [openGroups, setOpenGroups] = useState({});
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('si-sidebar-open-groups');
+      if (saved) setOpenGroups(JSON.parse(saved));
+    } catch {}
+  }, []);
+  const toggleGroup = (label) => {
+    setOpenGroups(prev => {
+      const next = { ...prev, [label]: !prev[label] };
+      try { localStorage.setItem('si-sidebar-open-groups', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   // R8: close the mobile drawer automatically on every navigation, and lock background scroll
   // while it's open (a full-height overlay with the page still scrolling underneath it feels
   // broken on touch devices).
@@ -152,29 +192,52 @@ export default function AdminSidebar({ pendingOrders: initialPendingOrders = 0, 
   // drawer always calls this with `false` — a temporary overlay has no need to save horizontal
   // space the way the persistent desktop rail does) — so the two views render from one map() and
   // can never drift out of sync with each other.
+  // Batch 19 (R33-3): each group's own label is now a clickable accordion toggle (openGroups,
+  // default all-closed, above) — EXCEPT when isCollapsed (the whole-sidebar icon-only mode): there
+  // are no labels to click in icon-only mode anyway, and hiding items there too would leave the
+  // icon rail empty, so icon-only mode bypasses the accordion and always shows every item.
   const renderNav = (isCollapsed) => (
-    <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-gray-700">
+    <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1 scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-gray-700">
       {navGroups.map(group => {
         const visibleItems = group.items.filter(item => (!item.superAdminOnly || isSuperAdmin) && canSeeModule(item.module));
         if (visibleItems.length === 0) return null;
+        const isOpen = isCollapsed || !!openGroups[group.label];
+        const pendingInGroup = visibleItems.reduce((sum, item) => sum + badgeCount(item.badge), 0);
         return (
-          <div key={group.label}>
-            {!isCollapsed && <p className="text-gray-600 text-xs font-bold uppercase tracking-widest px-3 mb-1">{group.label}</p>}
-            <div className="space-y-0.5">
-              {visibleItems.map(({ href, label, icon: Icon, exact, badge }) => (
-                <Link key={href} href={href}
-                  title={isCollapsed ? label : undefined}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(href, exact) ? 'text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-                  style={isActive(href, exact) ? { backgroundColor: 'var(--color-primary)' } : {}}>
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  {!isCollapsed && <span className="truncate flex-1">{label}</span>}
-                  {!isCollapsed && badgeCount(badge) > 0 && (
-                    <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 font-bold">
-                      {badgeCount(badge) > 9 ? '9+' : badgeCount(badge)}
-                    </span>
-                  )}
-                </Link>
-              ))}
+          <div key={group.label} className="pt-2">
+            {!isCollapsed && (
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.label)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-1 rounded-lg hover:bg-gray-900 transition-colors"
+              >
+                <span className="text-gray-500 text-xs font-bold uppercase tracking-widest">{group.label}</span>
+                <span className="flex items-center gap-1.5 flex-shrink-0">
+                  {!isOpen && pendingInGroup > 0 && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+                  <ChevronDown className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                </span>
+              </button>
+            )}
+            {/* max-h-[32rem]: comfortably fits even the largest group with room to spare — sized
+                with headroom for the Export Dashboard group specifically, which R33-5 (later in
+                this same batch) grows to 8 sub-items. */}
+            <div className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'}`}>
+              <div className="space-y-0.5 pt-1">
+                {visibleItems.map(({ href, label, icon: Icon, exact, badge }) => (
+                  <Link key={href} href={href}
+                    title={isCollapsed ? label : undefined}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive(href, exact) ? 'text-white shadow-sm' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+                    style={isActive(href, exact) ? { backgroundColor: 'var(--color-primary)' } : {}}>
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    {!isCollapsed && <span className="truncate flex-1">{label}</span>}
+                    {!isCollapsed && badgeCount(badge) > 0 && (
+                      <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0 font-bold">
+                        {badgeCount(badge) > 9 ? '9+' : badgeCount(badge)}
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         );

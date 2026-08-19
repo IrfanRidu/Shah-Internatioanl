@@ -114,6 +114,16 @@ body {
 .page-enter { animation: pageEnter 0.4s ease forwards; }
 @keyframes pageEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+/* Batch 19 (R33-2): Partners & Buyers marquee — see components/home/PartnersSection.jsx's own
+   comment for why this replaced a requestAnimationFrame + JS-tracked pixel position. translateX(-50%)
+   is resolved against the (doubled-content) track's own width continuously at paint time, so it's
+   always correct regardless of when/whether images have finished loading — unlike a scrollWidth
+   value read once per JS frame, which grew as each unsized <img> loaded in and caused the loop to
+   reset early, repeatedly, which is what looked like the track restarting instead of flowing.
+   translateX(-50%), not a hardcoded pixel value, since the track's real width depends on how many
+   partner logos the admin has configured. */
+@keyframes partners-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
 /* Loading skeleton */
 .skeleton { @apply animate-pulse bg-gray-200 rounded; }
 .dark .skeleton { @apply bg-gray-700; }

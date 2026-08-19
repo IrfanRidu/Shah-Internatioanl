@@ -38,7 +38,12 @@ export async function POST(request) {
       const batch = users.slice(i, i + BATCH_SIZE);
       await Promise.allSettled(batch.map(async (u) => {
         try {
-          await sendEmail({ to: u.email, subject, html: body.replace('{{name}}', u.name) });
+          // Batch 19 (R33-9): was `.replace('{{name}}', u.name)` — a STRING argument to .replace()
+          // only replaces the FIRST occurrence, so any template mentioning {{name}} more than once
+          // (a closing "Thanks, {{name}}!" as well as the opening greeting, for example) left every
+          // occurrence after the first as literal, unreplaced placeholder text. A global regex
+          // replaces every occurrence, matching what the admin UI's own hint text promises.
+          await sendEmail({ to: u.email, subject, html: body.replace(/\{\{name\}\}/g, u.name) });
           sent++;
         } catch { failed++; }
       }));

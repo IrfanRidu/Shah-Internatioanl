@@ -1172,7 +1172,94 @@ up, not only hero:
   also matches a banner set to `all`) and comma-separated `type` support (`?type=promotional,side`)
   — purely additive, no change for existing callers that don't pass either param.
 
-## 27. Setup Reminder
+## 27. Batch 19 — BD Invoice HS-Code Mode, Partners Carousel Fix, Collapsible Admin Sidebar, Export Dashboard Restructure + Overview, Quotation/Email-Marketing SMTP, 50MB Chat Attachments, Uniform Product Cards, Mobile Footer/FAQ, InfoGrid Overlap Fix (R33)
+
+Full detail in AGENT_PROGRESS_19.md. A large batch (12 items plus a post-delivery bug fix) —
+summarized by topic below rather than item number.
+
+**BD Invoice HS-Code mode (R33-1).** Added a dropdown (in a small toolbar above the BD Invoice
+table, since the two modes render structurally different tables) letting the admin choose
+"Category HS Code" (default — the exact batch-17 behavior, completely unchanged: rows grouped by
+product category) or "Product HS Code" (new: one row per individual product, with botanical name,
+mirroring Shipment Details directly — reuses the same ReadOnlyItemsView component Buyer's Invoice
+already uses, rather than building a second editable table). Persisted per-shipment
+(`bdHsCodeMode` on ExportShipment). All four render paths (editor, PDF, DOCX/XLSX, print page) now
+branch on this mode; the mismatch-cross-check banner only applies in Category mode, since Product
+mode is always a live, un-lockable mirror that can never disagree with itself. A verification sweep
+caught 2 more spots needing the same branch that weren't in the original plan: the combined
+"generate all documents" PDF's per-type availability check, and the Export Archives page's
+identical check — both would have silently hidden BD Invoice for any Product-mode shipment.
+
+**Partners & Buyers carousel (R33-2).** The reported "restarts instead of flowing" turned out to be
+a requestAnimationFrame loop resetting against `track.scrollWidth` read fresh every frame — plain
+`<img>` tags without explicit dimensions don't report their true size until they've actually
+loaded, so scrollWidth kept growing as each logo loaded in, causing repeated premature resets.
+Replaced with a pure CSS `@keyframes` loop (`translateX(-50%)`, resolved continuously against the
+track's real width at paint time, immune to load-timing) — same hover/touch pause behavior
+preserved via `animationPlayState`.
+
+**Collapsible admin sidebar (R33-3).** Every nav group's label is now a button toggling that
+group's own items, default closed, persisted per-admin via localStorage (matching the existing
+icon-only-collapse preference's own pattern) — a small red dot marks a closed group containing a
+pending badge count so nothing gets silently hidden.
+
+**Export Dashboard restructure (R33-4/5).** Renamed "Export & Import" to "Export Dashboard"; split
+"Import Dashboard" into its own top-level sidebar section (the page itself already existed as a
+proper "Coming Soon" placeholder — nothing to build there yet, per the request). Discovered Export
+Categories/Incentives/Analytics/Archives/Settings were already separate, working pages — just
+duplicated as quick-link buttons on the main page instead of living in the sidebar — so this mostly
+meant moving 5 links into the sidebar and deleting the duplicate row, not building new pages. Only
+Overview was genuinely new: a new `/api/admin/export-overview` aggregation endpoint (shipments
+grouped by month/country/category/buyer, normalized to USD via the live exchange-rate cache;
+incentive figures reuse `calculateIncentiveCosting` — the exact formula the Incentive Application
+detail page itself uses, not a separate reimplementation) feeding a new charts page matching the
+established KPICard/recharts visual pattern from the main admin analytics page.
+
+**SMTP / email (R33-6/9).** The reported Gmail "535 BadCredentials" error is a Google-Account/
+environment-variable issue (a regular password where an App Password is now effectively required)
+— not fixable from code, stated plainly rather than pretended otherwise. Two real, separate code
+bugs found and fixed regardless: email-marketing's `{{name}}` placeholder used `.replace()` with a
+string argument, which only replaces the FIRST occurrence — a template mentioning it twice left the
+second one literal; and the public quotation form was passing raw SMTP error text straight through
+to customers, now logged server-side and replaced with a friendly, actionable message instead.
+
+**Chat: scroll bug + 50MB attachments (R33-7).** The chat auto-scrolling away from wherever a user
+had scrolled to was a stale-dependency bug — `useEffect(..., [messages])` re-fired on every 4-
+second poll (a fresh array reference every time, even with zero new content), not just on a
+genuinely new message; fixed by depending on `messages.length` instead, on both the customer and
+admin chat pages. Built full attachment support up to 50MB: the existing upload route's base64-in-
+JSON-body approach is fundamentally incompatible with that size (Vercel's serverless functions have
+a hard, non-configurable 4.5MB request body cap) — implemented direct-to-Cloudinary signed uploads
+instead (a new signing endpoint issues a short-lived credential; the browser uploads the file bytes
+straight to Cloudinary, never touching our own backend's body limit at all), with upload progress,
+a light executable-file denylist, and inline image/file-card rendering in both chat UIs.
+
+**Product cards / images (R33-10/11).** Every one of ProductCard's 8 consumers already wrapped it
+in their own sizing container (grid columns or a `flex-shrink-0 w-48/w-52` div) — the card's own
+hardcoded `width: 170px` fought all of them, which is why sizing looked inconsistent everywhere it
+was used, not just on one page. Changed to `w-full` so each consumer's existing wrapper becomes the
+single source of truth. Added local name in brackets next to the product name — and while checking
+that every relevant product query actually selects that field, found and fixed 2 that didn't
+(the homepage's FlashSale and SpecialSection populate() calls).
+
+**Mobile layout (R33-12/13).** Footer grid now 2 columns on mobile instead of 1. FAQ's existing
+3-column split was ALSO what mobile saw before (grid-cols-1 just stacked all 3 groups vertically,
+showing every FAQ 3x over, not "too many" so much as "literally all of them") — added a genuinely
+separate mobile-only flat list showing 2 with an expand/collapse toggle; the 3-column grid is now
+desktop-only and otherwise unchanged.
+
+**Post-delivery fix: InfoGrid overlap (screenshot-reported).** Exporter address text wrapping to a
+2nd line was overlapping the Contract No row below it, in every document type, in both letterhead
+and plain A4. Root cause confirmed in lib/exportDocuments.js's drawInfoGrid (the PDF path) —
+jsPDF's `maxWidth` option wraps text automatically when drawn but reserves no extra vertical space
+for that wrapping on its own; the row cursor advanced by a flat 5mm regardless of how many lines a
+cell actually needed. Fixed by computing each row's required line count via jsPDF's own
+`splitTextToSize` (the same wrapping `.text(maxWidth)` applies internally) before advancing the
+cursor — exactly 5mm, unchanged, for the overwhelming majority of rows that don't wrap. The
+parallel HTML/print-page InfoGrid was checked too and found to already be a standard, correctly
+auto-sizing CSS Grid with no equivalent defect.
+
+## 28. Setup Reminder
 
 ```bash
 npm install

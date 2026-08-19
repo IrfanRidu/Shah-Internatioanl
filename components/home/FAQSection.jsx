@@ -7,6 +7,9 @@ export default function FAQSection() {
   // `open` holds the index of the currently open FAQ, or null if all closed.
   // Clicking an open FAQ closes it; clicking a different one opens it.
   const [open, setOpen] = useState(null);
+  // Batch 19 (R33-13): mobile-only — shows just the first 2 FAQs until expanded. Desktop's
+  // 3-column layout below is untouched and unaffected by this.
+  const [showAllMobile, setShowAllMobile] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings', { cache: 'no-store' })
@@ -65,8 +68,28 @@ export default function FAQSection() {
         <p className="text-gray-400 text-sm mt-1">Click a question to read the answer. Click again to close.</p>
       </div>
 
-      {/* Three-column compact grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* Batch 19 (R33-13): mobile-only flat list — shows the first 2 FAQs (in original order, not
+          split into thirds the way the desktop columns below are), with an expand/collapse toggle
+          for the rest. Hidden from md up, where the existing 3-column grid takes over instead. */}
+      <div className="md:hidden space-y-2">
+        {(showAllMobile ? faqs : faqs.slice(0, 2)).map((faq, i) => (
+          <FaqItem key={i} faq={faq} globalIndex={i} />
+        ))}
+        {faqs.length > 2 && (
+          <button
+            type="button"
+            onClick={() => setShowAllMobile(v => !v)}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold text-brand hover:text-green-700 transition-colors"
+          >
+            {showAllMobile ? 'Show Less' : `Show All ${faqs.length} FAQs`}
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showAllMobile ? 'rotate-180' : ''}`} />
+          </button>
+        )}
+      </div>
+
+      {/* Three-column compact grid — desktop only now (was shown on mobile as 3 stacked full-length
+          groups before batch 19, which is what made the mobile FAQ section so long). */}
+      <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="space-y-2">
           {col1.map((faq, i) => (
             <FaqItem key={i} faq={faq} globalIndex={i} />

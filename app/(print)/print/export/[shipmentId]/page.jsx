@@ -239,15 +239,21 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
 }
 
 // R3/R4: Buyer's Invoice and BD Invoice share this component (both headed "Commercial Invoice"),
-// but differ in: item source (Buyer's Invoice mirrors the master `items`; BD Invoice uses its own
-// small admin-editable `bdItems`, one row per product category — see the shipment editor), column
-// set (registry key; batch 17 gives BD Invoice its own HS Code column), name header/cell (batch
-// 17: BD Invoice rows are category names, so no botanical name applies there), and declaration
-// text (Buyer's Invoice gets the full BDREX/GSP paragraph; BD Invoice gets the same simple one as
-// Packing List).
+// but differ in: item source (Buyer's Invoice mirrors the master `items`; BD Invoice's Category
+// mode — the default — uses its own small admin-editable `bdItems`, one row per product category;
+// batch 19's Product HS Code mode makes BD Invoice mirror `items` directly too, same as Buyer's
+// Invoice, just still under the BD Invoice column set/declaration — see the shipment editor),
+// column set (registry key; batch 17 gives BD Invoice its own HS Code column), name header/cell
+// (Category mode: no botanical name, since rows are category names; Buyer's Invoice and Product
+// mode both show one), and declaration text (Buyer's Invoice gets the full BDREX/GSP paragraph;
+// BD Invoice — either HS-code mode — gets the same simple one as Packing List).
 function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type, onLetterheadLoad }) {
   const isBuyer = type === 'buyer-invoice';
-  const items = (isBuyer ? shipment.items : shipment.bdItems || []).filter((i) => i.productName);
+  // Batch 19 (R33-1): docKey passed to getDocumentColumns/resolveDocumentText stays 'bdInvoice'
+  // regardless of HS-code mode (the admin's configured BD Invoice column set/declaration still
+  // applies) — only the item source and botanical-name/header treatment change with the mode.
+  const isBdProductMode = type === 'bd-invoice' && shipment.bdHsCodeMode === 'product';
+  const items = ((isBuyer || isBdProductMode) ? shipment.items : shipment.bdItems || []).filter((i) => i.productName);
   const currency = shipment.baseCurrency || 'EUR';
   const grand = grandTotals(items);
   const columns = getDocumentColumns(shipment.exportCategory, isBuyer ? 'buyerInvoice' : 'bdInvoice');
@@ -264,7 +270,7 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
         <thead>
           <tr>
             <th style={TH}>SL NO.</th>
-            {isBuyer ? (
+            {(isBuyer || isBdProductMode) ? (
               <th style={{ ...TH, textAlign: 'left' }}>Name of Products<br />(Botanical Name)</th>
             ) : (
               <th style={{ ...TH, textAlign: 'left' }}>Name of Products</th>
@@ -278,7 +284,7 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
               <td style={TDC}>{i + 1}</td>
               <td style={TD}>
                 {item.productName}
-                {isBuyer && item.botanicalName && <><br /><span style={{ fontStyle: 'italic', fontSize: '8.5px' }}>({item.botanicalName})</span></>}
+                {(isBuyer || isBdProductMode) && item.botanicalName && <><br /><span style={{ fontStyle: 'italic', fontSize: '8.5px' }}>({item.botanicalName})</span></>}
               </td>
               {columns.map((k) => <td key={k} style={TDC}>{renderItemCell(k, item)}</td>)}
             </tr>

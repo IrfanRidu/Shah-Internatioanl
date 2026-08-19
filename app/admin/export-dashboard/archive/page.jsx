@@ -35,7 +35,10 @@ function ShipmentFileGroup({ shipment, letterheadUrl, exporterInfo, docStyle }) 
     // Batch 7: Buyer's Invoice is now a read-only mirror of the master `items` table (no longer its
     // own independently-filled `buyerItems`) — this availability check follows that.
     { key: 'buyer-invoice', label: "Buyer's Invoice", Icon: ReceiptText, has: (shipment.items || []).some(i => i.productName) },
-    { key: 'bd-invoice', label: 'BD Invoice', Icon: Globe, has: (shipment.bdItems || []).some(i => i.productName) },
+    // Batch 19 (R33-1): Product HS Code mode mirrors `items` directly and never populates bdItems
+    // at all (same reasoning as Buyer's Invoice above) — checking bdItems alone would incorrectly
+    // hide BD Invoice from this list for a Product-mode shipment that actually has plenty of items.
+    { key: 'bd-invoice', label: 'BD Invoice', Icon: Globe, has: shipment.bdHsCodeMode === 'product' ? (shipment.items || []).some(i => i.productName) : (shipment.bdItems || []).some(i => i.productName) },
   ].filter(d => d.has);
 
   const uploadedPdfs = (shipment.additionalDocs || []).filter(isPdf);

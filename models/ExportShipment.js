@@ -60,6 +60,13 @@ const ExportShipmentSchema = new mongoose.Schema({
   salesTerm: String,        // e.g. "CFR, France"
   countryOfOrigin: { type: String, default: 'Bangladesh' },
 
+  // Batch 19 (R33-1): which HS Code mode BD Invoice uses. 'category' (default) is the batch-17
+  // behavior, completely unchanged — rows grouped by product category, one HS code per group.
+  // 'product' shows one row per individual product instead (mirroring Shipment Details/Buyer's
+  // Invoice directly), each with its own HS code. Persisted per-shipment since it's configured in
+  // the shipment editor's BD Invoice tab, not a per-download/print choice like docStyle.
+  bdHsCodeMode: { type: String, enum: ['category', 'product'], default: 'category' },
+
   // Exporter IDs
   tinNo: String,
   binNo: String,

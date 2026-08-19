@@ -53,13 +53,21 @@ export async function POST(request, { params }) {
     if (!isAdmin && conversation.user._id.toString() !== session.user.id) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    const { body } = await request.json();
-    if (!body?.trim()) return NextResponse.json({ success: false, message: 'Message cannot be empty' }, { status: 400 });
+    const { body, attachments } = await request.json();
+    // Batch 19 (R33-7): a message now only needs EITHER text OR at least one attachment, not
+    // necessarily both — an attachment-only message (no caption) is a normal, valid thing to send.
+    if (!body?.trim() && !attachments?.length) {
+      return NextResponse.json({ success: false, message: 'Message cannot be empty' }, { status: 400 });
+    }
 
     const senderRole = isAdmin ? 'admin' : 'user';
-    const message = await Message.create({ conversation: params.id, sender: session.user.id, senderRole, body });
+    const message = await Message.create({ conversation: params.id, sender: session.user.id, senderRole, body: body || '', attachments: attachments || [] });
 
-    conversation.lastMessage = body;
+    // Batch 19 (R33-7): an attachment-only message would otherwise leave the conversation list's
+    // preview snippet, and the notification email's body, blank/empty — give both a sensible
+    // fallback instead of silently showing nothing.
+    const lastMessagePreview = body?.trim() || '📎 Sent an attachment';
+    conversation.lastMessage = lastMessagePreview;
     conversation.lastMessageAt = new Date();
     conversation.lastSenderRole = senderRole;
     if (senderRole === 'admin') { conversation.unreadByUser = true; conversation.unreadByAdmin = false; }
@@ -68,9 +76,9 @@ export async function POST(request, { params }) {
 
     try {
       if (senderRole === 'admin') {
-        await sendNewMessageEmail({ toAdmin: false, toEmail: conversation.user.email, toName: conversation.user.name, subject: conversation.subject, body });
+        await sendNewMessageEmail({ toAdmin: false, toEmail: conversation.user.email, toName: conversation.user.name, subject: conversation.subject, body: lastMessagePreview });
       } else {
-        await sendNewMessageEmail({ toAdmin: true, userName: session.user.name, userEmail: session.user.email, subject: conversation.subject, body, conversationId: conversation._id });
+        await sendNewMessageEmail({ toAdmin: true, userName: session.user.name, userEmail: session.user.email, subject: conversation.subject, body: lastMessagePreview, conversationId: conversation._id });
       }
     } catch (e) { console.error('Notify email failed:', e); }
 

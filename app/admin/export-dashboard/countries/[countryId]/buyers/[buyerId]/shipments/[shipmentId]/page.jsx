@@ -525,6 +525,9 @@ export default function ShipmentDetailPage() {
     landingPort: 'Hazrat Shahjalal International Airport',
     portOfDischarge: '', finalDestination: '', salesTerm: 'CFR',
     countryOfOrigin: 'Bangladesh',
+    // Batch 19 (R33-1): default matches the schema default — new shipments start in the existing,
+    // unchanged category-grouped BD Invoice behavior.
+    bdHsCodeMode: 'category',
     tinNo: '518591244958', binNo: '71367570202', ercNo: '260326210852625',
     expNo: '', expDateStr: '', awbNo: '', awbDateStr: '', pcNo: '', pcDateStr: '', rexNo: '', // R1: REX No, auto-fills from the License below
     exportLicense: '', // requirement 7
@@ -954,16 +957,21 @@ export default function ShipmentDetailPage() {
   // Packing List and Buyer's Invoice are now READ-ONLY views of the very same `items` array as
   // Shipment Details (see ReadOnlyItemsView) — they're structurally the same data, so they can
   // never disagree with it. Gross Weight is one shared field mirrored on every tab, so it can't
-  // disagree either. The one place a real mismatch CAN happen is BD Invoice, since R4 explicitly
-  // makes its rows independently admin-editable after the initial seed — so that's what this
-  // actually checks.
-  const bdTotalCTN = form.bdItems.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0);
-  const bdTotalQty = form.bdItems.reduce((a, r) => a + (Number(r.quantityKg) || 0), 0);
-  const bdTotalValue = form.bdItems.reduce((a, r) => a + (Number(r.totalValue) || 0), 0);
-  const bdHasData = form.bdItems.some(r => r.productName);
+  // disagree either. The one place a real mismatch CAN happen is BD Invoice in Category mode,
+  // since R4 explicitly makes its rows independently admin-editable after the initial seed.
+  // Batch 19 (R33-1): Product mode is ALSO a direct read-only mirror of `items` (same reasoning as
+  // Packing List/Buyer's Invoice above — see the BD Invoice tab's conditional rendering below) —
+  // so in that mode BD Invoice's totals are simply the shipment-wide totals already computed
+  // above, not a separate reduce over bdItems (which isn't even being kept in sync in this mode),
+  // and a mismatch is structurally impossible, exactly like Packing List/Buyer's Invoice.
+  const isBdProductMode = form.bdHsCodeMode === 'product';
+  const bdTotalCTN = isBdProductMode ? liveTotalCTN : form.bdItems.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0);
+  const bdTotalQty = isBdProductMode ? liveTotalNetWeightKg : form.bdItems.reduce((a, r) => a + (Number(r.quantityKg) || 0), 0);
+  const bdTotalValue = isBdProductMode ? itemsTotalValue : form.bdItems.reduce((a, r) => a + (Number(r.totalValue) || 0), 0);
+  const bdHasData = isBdProductMode ? form.items.some(r => r.productName) : form.bdItems.some(r => r.productName);
   const MISMATCH_TOLERANCE = 0.01;
   const bdMismatches = [];
-  if (bdHasData) {
+  if (bdHasData && !isBdProductMode) {
     if (Math.abs(bdTotalCTN - liveTotalCTN) > MISMATCH_TOLERANCE) bdMismatches.push(`Total CTN — BD Invoice: ${bdTotalCTN}, Shipment Details: ${liveTotalCTN}`);
     if (Math.abs(bdTotalQty - liveTotalNetWeightKg) > MISMATCH_TOLERANCE) bdMismatches.push(`Net Weight — BD Invoice: ${bdTotalQty.toFixed(2)} KG, Shipment Details: ${liveTotalNetWeightKg.toFixed(2)} KG`);
     if (Math.abs(bdTotalValue - itemsTotalValue) > MISMATCH_TOLERANCE) bdMismatches.push(`Total Value — BD Invoice: ${bdTotalValue.toFixed(2)} ${form.baseCurrency}, Shipment Details: ${itemsTotalValue.toFixed(2)} ${form.baseCurrency}`);
@@ -1254,22 +1262,48 @@ export default function ShipmentDetailPage() {
           </div>
         )}
 
-        {/* ── BD Invoice — seeded once from Shipment Details' totals, then independently editable;
-             that's exactly what the mismatch banner below is watching for (R3/R4) ── */}
+        {/* ── BD Invoice — seeded once from Shipment Details' totals, then independently editable
+             in Category mode; a live direct mirror of Shipment Details in Product mode (R33-1) ── */}
         {tab === 'bd-invoice' && (
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-bold text-gray-900 dark:text-white">BD Invoice</h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {form.bdItemsLocked
-                    ? 'Manually edited — no longer follows Shipment Details automatically'
-                    : "Automatically follows Shipment Details' totals — edit a row below to take manual control"}
+                  {isBdProductMode
+                    ? 'Product HS Code mode — one row per product, always mirroring Shipment Details directly'
+                    : form.bdItemsLocked
+                      ? 'Manually edited — no longer follows Shipment Details automatically'
+                      : "Automatically follows Shipment Details' totals — edit a row below to take manual control"}
                 </p>
               </div>
               <div className="flex gap-2">
                 <DocActionBar baseDocType="bd-invoice" docStyle={docStyle} setDocStyle={setDocStyle} onPrint={handlePrint} onDownload={handleDownload} onEditText={openTextOverrideEditor} downloadingDoc={downloadingDoc} downloadFormat={downloadFormat} setDownloadFormat={setDownloadFormat} locked={locked} />
               </div>
+            </div>
+
+            {/* Batch 19 (R33-1): the HS Code mode toggle. Lives in its own small toolbar rather than
+                literally inside a <th> — Category and Product mode render two structurally
+                different tables (BdInvoiceTable's editable rows vs. ReadOnlyItemsView's read-only
+                mirror of Shipment Details), so there's no single header cell that persists across
+                both to put a dropdown inside. Positioned directly above the table it controls so
+                the connection to "the HS Code column's behavior" stays clear regardless. */}
+            <div className="flex items-center gap-2 mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-900">
+              <label className="text-sm font-semibold text-blue-800 dark:text-blue-300 whitespace-nowrap">HS Code Mode:</label>
+              <select
+                value={form.bdHsCodeMode}
+                onChange={e => set('bdHsCodeMode', e.target.value)}
+                className="input-field py-1.5 text-sm w-auto"
+                disabled={locked}
+              >
+                <option value="category">Category HS Code (default)</option>
+                <option value="product">Product HS Code</option>
+              </select>
+              <p className="text-xs text-blue-600 dark:text-blue-400 flex-1">
+                {isBdProductMode
+                  ? 'Every product shown individually, each with its own HS code.'
+                  : 'Products grouped by category, one HS code per category.'}
+              </p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Net Weight</p><p className="font-bold text-gray-900 dark:text-white">{liveTotalNetWeightKg.toFixed(2)} kg</p></div>
@@ -1295,15 +1329,24 @@ export default function ShipmentDetailPage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-green-700 dark:text-green-300 font-semibold">Currency: {form.baseCurrency}</span>
                 <span className="text-green-500">1 USD = {rate ? rate.toFixed(4) : '...'} {form.baseCurrency}</span>
-                {form.bdItemsLocked ? (
+                {/* Batch 19 (R33-1): Locked/Auto-syncing is a Category-mode-only concept — Product
+                    mode is always a live, un-lockable mirror of Shipment Details, same as Packing
+                    List/Buyer's Invoice, so there's nothing here to lock or re-fill. */}
+                {!isBdProductMode && (form.bdItemsLocked ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">🔒 Locked</span>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">🔄 Auto-syncing</span>
-                )}
+                ))}
               </div>
-              <button onClick={handleReseedBd} className="text-xs text-brand hover:underline font-semibold whitespace-nowrap">↻ Re-fill from Shipment Details</button>
+              {!isBdProductMode && (
+                <button onClick={handleReseedBd} className="text-xs text-brand hover:underline font-semibold whitespace-nowrap">↻ Re-fill from Shipment Details</button>
+              )}
             </div>
-            <BdInvoiceTable items={form.bdItems} onChange={setBdItems} columns={getDocumentColumns(selectedCategory, 'bdInvoice')} currency={form.baseCurrency} salesTerm={form.salesTerm} />
+            {isBdProductMode ? (
+              <ReadOnlyItemsView items={form.items} columns={getDocumentColumns(selectedCategory, 'bdInvoice')} currency={form.baseCurrency} salesTerm={form.salesTerm} />
+            ) : (
+              <BdInvoiceTable items={form.bdItems} onChange={setBdItems} columns={getDocumentColumns(selectedCategory, 'bdInvoice')} currency={form.baseCurrency} salesTerm={form.salesTerm} />
+            )}
             <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-xl text-sm font-semibold text-green-700">
               Total BD Invoice Value: {bdTotalValue.toFixed(2)} {form.baseCurrency}
               <span className="ml-3 text-xs text-gray-500 font-normal">≈ USD {rate ? (bdTotalValue / rate).toFixed(2) : '...'}</span>

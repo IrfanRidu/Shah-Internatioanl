@@ -115,9 +115,14 @@ export default function ExportDashboardPage() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Globe2 className="w-6 h-6 text-brand" /> Export Dashboard
+            <Globe2 className="w-6 h-6 text-brand" /> Shipments
           </h1>
-          <p className="text-sm text-gray-500">Start with an Export Category, then manage countries, buyers, shipments, documents and analytics</p>
+          {/* Batch 19 (R33-5): was "Start with an Export Category, then manage countries, buyers,
+              shipments, documents and analytics" — Categories/Analytics/Archives/Incentives/
+              Settings all moved to their own sidebar items (see the quick-link row removed just
+              below), so this page's own scope is now just countries, buyers, contracts, and
+              shipments — the subtitle now describes only that. */}
+          <p className="text-sm text-gray-500">Manage countries, buyers, contracts and shipments</p>
         </div>
       </div>
 
@@ -154,37 +159,13 @@ export default function ExportDashboardPage() {
         </div>
       </div>
 
-      {/* Top-level nav: Export Categories comes first — it's the dashboard's central concept
-          (batch 7): pick/create a category before a shipment, since it drives that shipment's
-          document format. Countries stays as an in-page tab; the rest navigate directly on a
-          single click. */}
-      <div className="flex gap-2 mb-6 border-b border-gray-100 dark:border-gray-800 pb-2 flex-wrap">
-        <Link href="/admin/export-dashboard/categories"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
-          style={{ backgroundColor: 'var(--color-primary)' }}>
-          🏷️ Export Categories
-        </Link>
-        <button onClick={() => setTab('countries')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${tab === 'countries' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-          🌍 Countries & Buyers
-        </button>
-        <Link href="/admin/export-dashboard/analytics"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-          📊 Export Analytics
-        </Link>
-        <Link href="/admin/export-dashboard/archive"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-          🗂️ Export Archives
-        </Link>
-        <Link href="/admin/export-dashboard/incentives"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-          💰 Incentive
-        </Link>
-        <Link href="/admin/export-dashboard/settings"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all">
-          ⚙️ Settings
-        </Link>
-      </div>
+      {/* Batch 19 (R33-5): the quick-link row that used to live here (Export Categories, Export
+          Analytics, Export Archives, Incentive, Settings — each just a <Link> to its own already-
+          separate route) is removed — all 5 are now reachable directly from the sidebar's Export
+          Dashboard section instead, so keeping them duplicated here too was exactly the "these
+          tabs are not necessary in this Shipment page" clutter being asked to go. "Countries &
+          Buyers" was the only genuine in-page tab (the only other one, `tab==='countries'`, was
+          never actually anything else) — its content below is completely unchanged. */}
 
       {/* Countries Tab */}
       {tab === 'countries' && (

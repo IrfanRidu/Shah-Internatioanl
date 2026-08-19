@@ -42,7 +42,14 @@ export default function ProductCard({ product }) {
   };
 
   return (
-    <Link href={`/products/${product.slug}`} className="card group flex flex-col snap-start flex-shrink-0" style={{ width: '170px' }}>
+    // Batch 19 (R33-10): was `style={{ width: '170px' }} + flex-shrink-0` — a hardcoded width that
+    // fought every single one of this component's 8 consumers, EVERY one of which already wraps
+    // it in their own sizing container (grid columns on the 3 grid-based listing pages, or a
+    // `flex-shrink-0 w-48/w-52...` div on the 5 carousel-based sections) — the card rendering at a
+    // fixed 170px regardless of that wrapper's actual width is exactly why cards looked
+    // inconsistently sized/gapped depending on context. `w-full` makes this component correctly
+    // fill whatever its caller already sized for it, in every context, uniformly.
+    <Link href={`/products/${product.slug}`} className="card group flex flex-col snap-start w-full">
       {/* Image — compact square */}
       <div className="relative overflow-hidden bg-gray-100 flex-shrink-0 rounded-t-2xl" style={{ height: '160px' }}>
         <Image
@@ -91,7 +98,9 @@ export default function ProductCard({ product }) {
           always pinned to the bottom via mt-auto instead of being clipped by a too-small fixed height */}
       <div className="p-2.5 flex flex-col flex-1">
         <p className="text-xs text-gray-400 truncate leading-tight h-4">{product.category?.name || '\u00A0'}</p>
-        <h3 className="font-semibold text-gray-900 dark:text-white text-xs leading-tight mt-0.5 line-clamp-2" style={{ minHeight: '2rem' }}>{product.name}</h3>
+        <h3 className="font-semibold text-gray-900 dark:text-white text-xs leading-tight mt-0.5 line-clamp-2" style={{ minHeight: '2rem' }}>
+          {product.name}{product.localName && <span className="font-normal text-gray-500 dark:text-gray-400"> ({product.localName})</span>}
+        </h3>
         {/* Issue 6: organic/featured badges moved off the image to right under the product name. */}
         {(product.isFeatured || product.isOrganic) && (
           <div className="flex flex-wrap gap-1 mt-1">
