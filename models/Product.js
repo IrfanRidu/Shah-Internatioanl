@@ -36,7 +36,13 @@ const ProductSchema = new mongoose.Schema({
   // Stock & Quantity
   quantity: { type: Number, default: 0 },
   unit: { type: String, default: 'kg', enum: ['kg', 'ton', 'piece', 'box', 'bundle', 'bag', 'liter'] },
+  // Legacy single MOQ field — kept (not removed) so any product saved before the local/international
+  // split below still has a sensible value. New code should read minimumOrderQuantityLocal /
+  // minimumOrderQuantityInternational via lib/utils.js's getMoqForBuyer(), which falls back to this
+  // field automatically when the split fields are unset.
   minimumOrderQuantity: { type: Number, default: 1 },
+  minimumOrderQuantityLocal: { type: Number },
+  minimumOrderQuantityInternational: { type: Number },
   maximumOrderQuantity: { type: Number },
   // Pricing
   price: { type: Number }, // BDT price for local buyers
@@ -73,6 +79,13 @@ const ProductSchema = new mongoose.Schema({
   // Availability
   availableForLocal: { type: Boolean, default: true },
   availableForInternational: { type: Boolean, default: true },
+  // Admin-defined extra spec rows (e.g. "Grade: A+", "Packing: Carton") — free-form label/value pairs
+  // set per-product on the add/edit form and rendered alongside the built-in spec tiles (Origin,
+  // Season, Min. Order, etc.) on the product details page.
+  additionalFields: [{
+    label: { type: String, trim: true },
+    value: { type: String, trim: true },
+  }],
 }, { timestamps: true });
 
 // Kept in sync with buildProductQuery's regex search fields (name, scientificName, localName,

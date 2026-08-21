@@ -50,8 +50,16 @@ export default function ProductCard({ product }) {
     // inconsistently sized/gapped depending on context. `w-full` makes this component correctly
     // fill whatever its caller already sized for it, in every context, uniformly.
     <Link href={`/products/${product.slug}`} className="card group flex flex-col snap-start w-full">
-      {/* Image — compact square */}
-      <div className="relative overflow-hidden bg-gray-100 flex-shrink-0 rounded-t-2xl" style={{ height: '160px' }}>
+      {/* Image — the user confirmed the campaign strip's cards (FlashSaleSection.jsx, 150px wide ×
+          140px tall image) are "perfect in ratio". That's 150:140 = 15:14 — expressed here as an
+          aspect-ratio (not fixed pixels like the campaign card uses) because this component, unlike
+          the campaign card, is deliberately width-flexible across 9 different consumers (grid columns
+          on 3 pages, w-48 through w-60 wrappers on 6 carousels — see the Batch 19 note above) rather
+          than always exactly 150px; aspect-[15/14] reproduces the SAME proportion at whatever width
+          each context actually renders it. (Previously aspect-[4/5] — a portrait ratio meant to fix an
+          earlier "too square" report — overshot in the opposite direction and made the image section
+          too tall/long.) */}
+      <div className="relative overflow-hidden bg-gray-100 flex-shrink-0 rounded-t-2xl aspect-[15/14]">
         <Image
           src={img} alt={product.name} fill
           sizes="(max-width:640px) 50vw, 25vw"

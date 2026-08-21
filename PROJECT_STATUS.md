@@ -1259,7 +1259,100 @@ cursor — exactly 5mm, unchanged, for the overwhelming majority of rows that do
 parallel HTML/print-page InfoGrid was checked too and found to already be a standard, correctly
 auto-sizing CSS Grid with no equivalent defect.
 
-## 28. Setup Reminder
+## 28. Batch 20 — HS Code Column Reliability, Homepage/Product-Page Section Under-Population, Image SEO Slugs/Meta Tags, Search Normalization, Mobile Product-List Editing, Admin Pagination Persistence, Custom Product Fields, Local/International MOQ, Product Card Hover Bleed
+
+Full detail (including the investigation trail behind each root cause) in AGENT_PROGRESS_20.md and
+ROADMAP_BATCH20.md. 9 items, all traced to a confirmed root cause via full data-flow reading before
+any code changed — batch 19 had claimed HS Code was already fixed, but wasn't visible to the admin,
+which meant this batch started by re-verifying every earlier claim in the actual code rather than
+trusting prior notes at face value.
+
+**HS Code column reliability (item 1).** The batch-17 HS Code column was, and remained, correctly
+wired end to end (Product.hsCode → admin form → auto-fill on product-pick → category-breakdown →
+render) — the actual defect was that it was a *togglable* column tied to each Export Category's own
+saved `documentColumns.bdInvoice` config, so any category whose saved config didn't happen to
+include it (an old save predating the column, or an unchecked box) made HS Code vanish from every
+document surface for that category's shipments. Made it a mandatory, non-togglable column for BD
+Invoice specifically (removed from `AVAILABLE_COLUMNS.bdInvoice`; force-prepended in
+`getDocumentColumns()`) — packingList/buyerInvoice keep it as a normal toggle, unaffected. A single
+function change in lib/exportColumns.js fixes every render surface (PDF, DOCX/XLSX, print, admin
+editor) since they all derive from it.
+
+**Section under-population (item 2).** Homepage and product-detail-page sections were built via a
+single, page-wide "already shown" exclusion set threaded through every section in sequence —
+correct for admin-curated Campaigns/Sections (a product assigned to one shouldn't also clutter a
+generic section), but also applied between purely algorithmic sections that were never "selected"
+for anything (Featured, Currently Harvesting, Available for Pre-Order, per-category carousels on the
+homepage; Related/Recommended/Best-Selling on the product page). A category dominated by seasonal
+overlap (e.g. most of Fresh Fruits also being "Currently Harvesting") meant the algorithmic sections
+starved each other down to almost nothing. Split into two groups: Campaigns+Sections stay mutually
+exclusive of everything and claim first; the algorithmic sections now only exclude what that group
+claimed, not each other — a product can legitimately appear in more than one algorithmic section at
+once, same as any real e-commerce site. Also parallelized what had been artificially sequential
+queries now that they don't depend on each other.
+
+**Image SEO (item 3).** New product/banner/category image uploads now get a descriptive Cloudinary
+public_id slugified from whatever name the admin has already typed (`fresh-alphonso-mango-<id>.webp`
+instead of a random hash) — existing images keep their current URLs, this only affects uploads going
+forward. Product and category pages now set Open Graph/Twitter image tags (neither did before) and
+actually use the metaTitle/metaDescription fields their schemas already had but nothing read; root
+layout gets a site-wide fallback OG image. Swept the whole codebase for blank `alt=""` attributes —
+fixed all 9 found (the product gallery thumbnails, the lightbox, a flash-sale campaign banner, and
+several admin preview thumbnails).
+
+**Search normalization (item 4).** Case-insensitivity was already correct; the actual gaps were no
+trimming/punctuation-tolerance (a stray trailing space or comma broke matches against a clean
+product name) and no thumbnails in the shipment-details page's product picker or the admin
+campaign/section product pickers (the header search box already had them). Added a shared
+`normalizeSearchTerm`/`buildFlexibleSearchRegexSource` pair in lib/utils.js — words are matched
+individually and joined with a flexible non-word-character connector, so e.g. searching "mango
+alphonso" still matches a product named "Mango (Alphonso)". One change to `buildProductQuery`
+covers the storefront listing, the admin product list, and both admin comboboxes at once, since all
+four already shared that function; the header autocomplete route was updated to reuse the same
+helpers instead of its own separate copy.
+
+**Mobile admin product editing (item 5).** No hidden logic was suppressing it — the product list is
+one wide 10-column table with no mobile-alternative layout anywhere (checked orders/customers too,
+same gap), so the Actions column was simply off-screen without horizontal scroll. Added a `md:hidden`
+card-list view with the same data and an unmissable Edit button; desktop keeps the table unchanged.
+
+**Admin pagination persistence (item 6).** The product list's `page` state was never reflected in
+the URL, and the edit form's post-save redirect was an unconditional `router.push('/admin/products')`
+— always page 1. The list page now reads/writes page+search+category to/from its own URL, and
+Edit/Add links carry a `returnTo` query param the form reads back to compute where Cancel/Save should
+return to, deterministically (not reliant on browser-history behavior). Also fixed an adjacent bug
+while in the area: changing the search/category filter while on a later page could leave the admin
+stranded on a page of a completely different result set.
+
+**Custom product fields (item 7).** Added `additionalFields: [{label, value}]` to the Product schema,
+a repeatable add/remove row UI on the admin form, and rendering on the product page by extending the
+existing spec-tile grid (Origin/Season/Min. Order/etc.) rather than building new UI for it.
+
+**Local/international MOQ (item 8).** Split the single `minimumOrderQuantity` field into
+`minimumOrderQuantityLocal`/`minimumOrderQuantityInternational` (legacy field kept as a fallback for
+products saved before the split). Added `getMoqForBuyer()` mirroring the existing
+`getPriceForBuyer` pattern; wired into the product page's quantity stepper and spec tile, and — found
+during a final whole-codebase sweep for every remaining reference to the old field — the product
+comparison page, which also displayed MOQ and would otherwise have kept showing the wrong number for
+one buyer type.
+
+**Product card hover bleed (item 9).** `components/ui/Carousel.jsx`'s wrapper used Tailwind's plain,
+unnamed `group` class (for its own arrow-hover-reveal), and `ProductCard.jsx` also uses a plain
+`group` (for its own image-zoom/overlay) — nested unnamed groups both respond to any `group-hover:`
+in their subtree, so hovering anywhere in a carousel (gaps, arrows, any card) activated every card's
+hover effect at once. `FlashSaleSection.jsx` already avoided this correctly via Tailwind's named-group
+feature (`group/track`), which is exactly what Carousel.jsx now also uses (`group/carousel`) — a
+single-file fix; ProductCard.jsx needed no change.
+
+**Post-delivery hotfix (not one of the 9, reported separately right after v24 shipped).** Shipment
+save could crash with a raw `Cast to ObjectId failed for value ""` error whenever a Shipment Details
+row (very easy to end up with one — new shipments start with 3 blank rows by default) still had no
+product picked at save time. `handleSave` now drops genuinely-unused blank rows silently and blocks
+save with a clear, specific message for a row that has other data but no product chosen, instead of
+letting either case reach the server as a broken request. Full detail in AGENT_PROGRESS_20.md's
+"POST-DELIVERY HOTFIX" section. Delivered as shah-international-v25.zip.
+
+## 29. Setup Reminder
 
 ```bash
 npm install

@@ -35,7 +35,7 @@ export default function AdminBannersPage() {
       // Banners are wide hero images, so a larger ceiling than a typical thumbnail — still resized
       // client-side first, see resizeImageFile's own comment on why that matters on Vercel.
       const dataUrl = await resizeImageFile(file, { maxDimension: 1920, quality: 0.85 });
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'banners' }) });
+      const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'banners', name: form.title }) });
       const d = await res.json();
       if (d.success) set('image', d.url); else toast.error(d.message || 'Upload failed');
     } catch (err) {
@@ -106,7 +106,7 @@ export default function AdminBannersPage() {
         <div className="space-y-4">
           {form.image ? (
             <div className="relative h-32 rounded-xl overflow-hidden bg-gray-100 group">
-              <Image src={form.image} alt="" fill className="object-cover" sizes="600px" />
+              <Image src={form.image} alt={form.title ? `${form.title} preview` : 'Banner preview'} fill className="object-cover" sizes="600px" />
               <button onClick={() => set('image', '')} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-3.5 h-3.5" /></button>
             </div>
           ) : (

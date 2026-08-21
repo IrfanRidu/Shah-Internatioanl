@@ -47,9 +47,20 @@ export default function Carousel({ children, autoplay = false, showArrows = true
     resumeTimer.current = setTimeout(() => setPaused(false), delay);
   };
 
+  // NAMED group ("group/carousel"), not the plain "group" — this wrapper only needs group-hover for
+  // its OWN arrow buttons below. Each card rendered as `children` (ProductCard) has its own plain,
+  // unnamed `group`/`group-hover:` for its own image-zoom/overlay effect. Plain Tailwind group-hover
+  // is a bare CSS descendant selector (`.group:hover .group-hover\:x`) that matches ANY `.group`
+  // ancestor at ANY depth, not just the nearest one — so if this wrapper ALSO used the plain/unnamed
+  // "group" class, hovering anywhere inside it (including the gaps between cards, or these arrow
+  // buttons) would make the browser treat THIS element as :hover too, which would then satisfy that
+  // same bare selector for every card's OWN group-hover styles simultaneously — every card in the row
+  // lighting up together instead of just the one actually under the cursor. Keeping this wrapper on
+  // a named group avoids colliding with any plain/unnamed group nested inside it, from this component
+  // or any future one — only group-hover/carousel: (used below) responds to hovering this wrapper.
   return (
     <div
-      className={`relative group ${className}`}
+      className={`relative group/carousel ${className}`}
       onMouseEnter={pauseNow}
       onMouseLeave={() => resumeSoon(200)}
       onTouchStart={pauseNow}
@@ -65,14 +76,14 @@ export default function Carousel({ children, autoplay = false, showArrows = true
           <button
             onClick={() => { pauseNow(); scroll('left'); resumeSoon(2500); }}
             aria-label="Scroll left"
-            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 bg-white shadow-lg rounded-full p-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10 hover:bg-gray-50"
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 bg-white shadow-lg rounded-full p-2 opacity-100 md:opacity-0 md:group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-gray-50"
           >
             <ChevronLeft className="w-5 h-5 text-gray-700" />
           </button>
           <button
             onClick={() => { pauseNow(); scroll('right'); resumeSoon(2500); }}
             aria-label="Scroll right"
-            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 bg-white shadow-lg rounded-full p-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10 hover:bg-gray-50"
+            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 bg-white shadow-lg rounded-full p-2 opacity-100 md:opacity-0 md:group-hover/carousel:opacity-100 transition-opacity z-10 hover:bg-gray-50"
           >
             <ChevronRight className="w-5 h-5 text-gray-700" />
           </button>

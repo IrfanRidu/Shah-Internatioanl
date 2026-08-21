@@ -133,7 +133,7 @@ export default function ContractShipmentsPage() {
                 style={active ? { backgroundColor: 'var(--color-primary)' } : {}}>
                 {c.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={c.image} alt="" className="w-4 h-4 rounded object-cover" />
+                  <img src={c.image} alt={c.name} className="w-4 h-4 rounded object-cover" />
                 ) : <Tag className="w-3.5 h-3.5" />}
                 {c.name} ({count})
               </button>

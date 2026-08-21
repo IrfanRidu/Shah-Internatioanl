@@ -175,7 +175,7 @@ export default function ExportLicenseSection({ categories }) {
             <div className="flex items-center gap-3">
               {form.letterheadUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={form.letterheadUrl} alt="" className="h-12 w-auto max-w-[160px] object-contain bg-gray-50 rounded-lg border border-gray-100 p-1" />
+                <img src={form.letterheadUrl} alt="Letterhead preview" className="h-12 w-auto max-w-[160px] object-contain bg-gray-50 rounded-lg border border-gray-100 p-1" />
               )}
               <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all">
                 <Upload className="w-4 h-4" /> {uploading ? 'Uploading...' : form.letterheadUrl ? 'Replace' : 'Upload Letterhead'}

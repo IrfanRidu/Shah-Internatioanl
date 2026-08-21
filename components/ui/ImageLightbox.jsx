@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { gsap } from 'gsap';
 import { X, ChevronLeft, ChevronRight, ZoomIn, Download } from 'lucide-react';
 
-export default function ImageLightbox({ images = [], initialIndex = 0, isOpen, onClose }) {
+export default function ImageLightbox({ images = [], initialIndex = 0, isOpen, onClose, altPrefix = 'Image' }) {
   const [current, setCurrent] = useState(initialIndex);
   const [zoom, setZoom] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -86,7 +86,7 @@ export default function ImageLightbox({ images = [], initialIndex = 0, isOpen, o
       >
         <img
           src={images[current]}
-          alt={`Image ${current + 1}`}
+          alt={`${altPrefix} - photo ${current + 1}`}
           style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '12px', display: 'block' }}
         />
       </div>
@@ -108,7 +108,7 @@ export default function ImageLightbox({ images = [], initialIndex = 0, isOpen, o
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 backdrop-blur-sm px-4 py-2 rounded-2xl max-w-[90vw] overflow-x-auto" onClick={e => e.stopPropagation()}>
           {images.map((img, i) => (
             <button key={i} onClick={() => { setZoom(false); setCurrent(i); }} className={`relative w-12 h-12 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${i === current ? 'border-brand scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-              <Image src={img} alt="" fill className="object-cover" sizes="48px" />
+              <Image src={img} alt={`${altPrefix} thumbnail ${i + 1}`} fill className="object-cover" sizes="48px" />
             </button>
           ))}
         </div>

@@ -1,7 +1,8 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Loader from '@/components/ui/Loader';
@@ -10,20 +11,64 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Plus, Search, Edit2, Eye, ToggleLeft, ToggleRight, Trash2, Leaf, CheckSquare, Square, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+// Next.js requires useSearchParams() (used below, for issue 6's URL-synced page/search/category) to
+// sit under a Suspense boundary — without it, this page loses server rendering and falls back to a
+// full client-side render, and produces a build warning. Trivial to satisfy: the real page logic
+// moves into an inner component, and the default export just wraps it.
 export default function AdminProductsPage() {
+  return (
+    <Suspense fallback={<Loader />}>
+      <AdminProductsPageInner />
+    </Suspense>
+  );
+}
+
+function AdminProductsPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  // Issue 6: read the starting page/search/category from the URL instead of always defaulting to
+  // page 1 with no filters — this is what makes a returnTo link (see queryString/Edit link below,
+  // and app/admin/products/new/page.jsx) actually land back where the admin was, and also means a
+  // manual refresh or the browser's own back/forward button behave correctly.
+  const [page, setPage] = useState(() => Number(searchParams.get('page')) || 1);
   const [pages, setPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('search') || '');
+  const [category, setCategory] = useState(() => searchParams.get('category') || '');
   const [categories, setCategories] = useState([]);
   const [selected, setSelected] = useState([]);
   const [bulkAction, setBulkAction] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+
+  // Issue 6: the exact current list state as a query string — kept in sync with the address bar
+  // below, and also carried along on the Add/Edit links so a save or cancel on that page can bring
+  // the admin back here precisely (see returnTo handling in app/admin/products/new/page.jsx).
+  const queryString = (() => {
+    const p = new URLSearchParams();
+    p.set('page', String(page));
+    if (search) p.set('search', search);
+    if (category) p.set('category', category);
+    return p.toString();
+  })();
+
+  // Keeps the browser's address bar accurate as page/search/category change. replace (not push) so
+  // typing in the search box or flipping pages doesn't spam browser history with an entry per
+  // keystroke/page — the admin still lands on the exact right state via a single back/forward step.
+  useEffect(() => {
+    router.replace(`${pathname}?${queryString}`, { scroll: false });
+  }, [queryString, pathname, router]);
+
+  // Issue 6 (adjacent bug fixed alongside it): changing the search term or category filter while on
+  // e.g. page 3 could otherwise leave the admin stranded on page 3 of a completely different, maybe
+  // much shorter (even empty), result set. Both jump back to page 1 of their own new results — the
+  // page state itself is never reset anywhere else, so normal pagination is unaffected.
+  const handleSearchChange = (e) => { setSearch(e.target.value); setPage(1); };
+  const handleCategoryChange = (e) => { setCategory(e.target.value); setPage(1); };
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -79,16 +124,16 @@ export default function AdminProductsPage() {
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold text-gray-900 dark:text-white">Products</h1><p className="text-sm text-gray-500">{total} total products</p></div>
-        <Link href="/admin/products/new"><Button variant="primary" icon={Plus}>Add Product</Button></Link>
+        <Link href={`/admin/products/new?returnTo=${encodeURIComponent(queryString)}`}><Button variant="primary" icon={Plus}>Add Product</Button></Link>
       </div>
 
       {/* Filters */}
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 mb-5 flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input type="text" placeholder="Search products..." value={search} onChange={e => setSearch(e.target.value)} className="input-field pl-9 py-2 text-sm" />
+          <input type="text" placeholder="Search products..." value={search} onChange={handleSearchChange} className="input-field pl-9 py-2 text-sm" />
         </div>
-        <select value={category} onChange={e => setCategory(e.target.value)} className="input-field py-2 text-sm w-auto min-w-[160px]">
+        <select value={category} onChange={handleCategoryChange} className="input-field py-2 text-sm w-auto min-w-[160px]">
           <option value="">All Categories</option>
           {categories.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
         </select>
@@ -114,7 +159,63 @@ export default function AdminProductsPage() {
 
       {loading ? <Loader /> : (
         <>
-          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+          {/* Issue 5: the table below needs horizontal scroll to reach its last (Actions) column,
+              which makes Edit effectively undiscoverable on a phone-width screen — so mobile gets
+              this reflowed card list instead, with the SAME data and an unmissable Edit button.
+              Desktop/tablet keeps the table exactly as before. */}
+          <div className="md:hidden space-y-3">
+            {products.length === 0 ? (
+              <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 py-16 text-center text-gray-400">
+                <Leaf className="w-12 h-12 mx-auto mb-3 opacity-20" /><p>No products found</p>
+              </div>
+            ) : products.map(p => (
+              <div key={p._id} className={`bg-white dark:bg-gray-900 rounded-2xl border p-4 ${selected.includes(p._id) ? 'border-brand bg-green-50/50 dark:bg-green-900/10' : 'border-gray-100 dark:border-gray-800'}`}>
+                <div className="flex items-start gap-3">
+                  <button onClick={() => toggleSelect(p._id)} className="mt-1 text-gray-400 hover:text-brand shrink-0" aria-label="Select product">
+                    {selected.includes(p._id) ? <CheckSquare className="w-4 h-4 text-brand" /> : <Square className="w-4 h-4" />}
+                  </button>
+                  <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                    {p.images?.[0] ? <Image src={p.images[0]} alt={p.name} fill className="object-cover" sizes="56px" /> : <Leaf className="w-6 h-6 m-4 text-gray-300" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{p.name}</p>
+                    <p className="text-xs text-gray-400 truncate">{p.category?.name || '—'}</p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="font-semibold text-gray-800 dark:text-gray-200 text-sm">৳{p.price?.toLocaleString() || '—'}</span>
+                      {p.discountPrice && <span className="text-xs text-green-600">Sale: ৳{p.discountPrice?.toLocaleString()}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      {p.isHarvestingSeason
+                        ? <span className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-lg">🌿 Season</span>
+                        : <span className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-lg">⏰ Off</span>}
+                      <span className="text-xs text-gray-500">{p.quantity || 0} {p.unit}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => toggleActive(p)} className="shrink-0" aria-label="Toggle active">
+                    {p.isActive ? <ToggleRight className="w-6 h-6 text-green-500" /> : <ToggleLeft className="w-6 h-6 text-gray-400" />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                  <Link
+                    href={`/admin/products/${p._id}?returnTo=${encodeURIComponent(queryString)}`}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-brand/10 text-brand text-sm font-semibold"
+                  >
+                    <Edit2 className="w-4 h-4" /> Edit
+                  </Link>
+                  <Link
+                    href={`/products/${p.slug}`}
+                    target="_blank"
+                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-sm font-medium"
+                    aria-label="View on storefront"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
@@ -183,7 +284,7 @@ export default function AdminProductsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           <Link href={`/products/${p.slug}`} target="_blank" className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-all"><Eye className="w-4 h-4" /></Link>
-                          <Link href={`/admin/products/${p._id}`} className="p-1.5 rounded-lg text-gray-400 hover:text-green-500 hover:bg-green-50 transition-all"><Edit2 className="w-4 h-4" /></Link>
+                          <Link href={`/admin/products/${p._id}?returnTo=${encodeURIComponent(queryString)}`} className="p-1.5 rounded-lg text-gray-400 hover:text-green-500 hover:bg-green-50 transition-all"><Edit2 className="w-4 h-4" /></Link>
                         </div>
                       </td>
                     </tr>

@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import Image from 'next/image';
+import { Leaf } from 'lucide-react';
 
 // Reusable searchable/typeable product-name field (issue 37): lets the admin either free-type any
 // text (never locked to the catalog) OR pick from the product catalog via a dropdown that appears on
@@ -124,14 +126,24 @@ export default function ProductNameCombobox({ value, onChange, onSelect, placeho
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { onSelect(p); setOpen(false); }}
-              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-50 dark:border-gray-700 last:border-0"
+              className="w-full flex items-center gap-2.5 text-left px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-b border-gray-50 dark:border-gray-700 last:border-0"
             >
-              <p className="text-xs font-medium text-gray-900 dark:text-white">{p.name}</p>
-              {(p.scientificName || p.localName) && (
-                <p className="text-[10px] text-gray-400 italic">
-                  {[p.scientificName, p.localName].filter(Boolean).join(' · ')}
-                </p>
-              )}
+              {/* Issue 4: a thumbnail makes it much faster to confirm this is the right product when
+                  several share a similar name — matches the header search box's own autocomplete
+                  pattern (components/ui/SearchAutocomplete.jsx). */}
+              <span className="relative w-8 h-8 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+                {p.images?.[0]
+                  ? <Image src={p.images[0]} alt={p.name} fill className="object-cover" sizes="32px" />
+                  : <Leaf className="w-4 h-4 m-2 text-gray-300" />}
+              </span>
+              <span className="min-w-0">
+                <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{p.name}</p>
+                {(p.scientificName || p.localName) && (
+                  <p className="text-[10px] text-gray-400 italic truncate">
+                    {[p.scientificName, p.localName].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </span>
             </button>
           ))}
           {!loading && results.length === 0 && (

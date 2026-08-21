@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { resizeImageFile } from '@/lib/clientImageResize';
 import { Upload, X, Save, ArrowLeft, RefreshCw } from 'lucide-react';
 import { computeHarvestingSeason } from '@/lib/utils';
+import Loader from '@/components/ui/Loader';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -43,11 +44,25 @@ function Toggle({ label, checked, onChange }) {
 }
 
 export default function NewProductPage() {
-  return <ProductForm />;
+  // ProductForm uses useSearchParams() (for issue 6's returnTo handling) — Next.js requires a
+  // Suspense boundary around that, same reasoning as app/admin/products/page.jsx.
+  return (
+    <Suspense fallback={<div className="py-20"><Loader /></div>}>
+      <ProductForm />
+    </Suspense>
+  );
 }
 
 export function ProductForm({ initialData = {}, productId = null }) {
   const router = useRouter();
+  // Issue 6: the products list page encodes its current page/search/category filters into a
+  // `returnTo` query param on the links it builds to here (both Add and Edit) — see
+  // app/admin/products/page.jsx. Reading it back here means Cancel and a successful save both return
+  // the admin to the exact list state they came from, instead of always resetting to page 1. Falls
+  // back to the plain list URL when there's no returnTo (e.g. this page was opened directly).
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get('returnTo');
+  const listUrl = returnTo ? `/admin/products?${returnTo}` : '/admin/products';
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -56,7 +71,7 @@ export function ProductForm({ initialData = {}, productId = null }) {
     name: '', scientificName: '', localName: '', hsCode: '', description: '', shortDescription: '',
     category: '', subcategorySlug: '',
     price: '', discountPrice: '', priceRangeMin: '', priceRangeMax: '', productCost: '',
-    quantity: '', unit: 'kg', minimumOrderQuantity: '1',
+    quantity: '', unit: 'kg',
     harvestingSeason: '', harvestingMonths: [],
     isHarvestingSeason: true, allowPreOrder: true,
     countryOfOrigin: 'Bangladesh', harvestingLocation: '',
@@ -66,11 +81,21 @@ export function ProductForm({ initialData = {}, productId = null }) {
     storageInstructions: initialData.storageInstructions || '',
     shelfLife: initialData.shelfLife || '',
     images: initialData.images || [],
+    // Issue 7: free-form admin-defined spec rows, shown on the product details page alongside the
+    // built-in ones (Origin, Season, Min. Order, etc.). Excluded from the generic spread below like
+    // every other array/object field on this form, for the same reason (avoid double-handling).
+    additionalFields: initialData.additionalFields || [],
     // Spread initialData FIRST, then overwrite the fields that need type coercion.
     // This prevents initialData from clobbering our processed values below.
-    ...Object.fromEntries(Object.entries(initialData).filter(([k]) => !['tags','images','certifications','storageInstructions','shelfLife','isHarvestingSeason','allowPreOrder'].includes(k))),
+    ...Object.fromEntries(Object.entries(initialData).filter(([k]) => !['tags','images','certifications','storageInstructions','shelfLife','isHarvestingSeason','allowPreOrder','additionalFields','minimumOrderQuantityLocal','minimumOrderQuantityInternational'].includes(k))),
     isHarvestingSeason: initialData.isHarvestingSeason ?? true,
     allowPreOrder: initialData.allowPreOrder ?? true,
+    // Issue 8: local vs international MOQ, no longer a single shared field. A product saved before
+    // this split (or one where only the legacy field was ever filled in) falls back to that legacy
+    // minimumOrderQuantity value for BOTH, so opening it here for the first time shows a real,
+    // sensible starting number instead of silently resetting to 1.
+    minimumOrderQuantityLocal: initialData.minimumOrderQuantityLocal ?? initialData.minimumOrderQuantity ?? 1,
+    minimumOrderQuantityInternational: initialData.minimumOrderQuantityInternational ?? initialData.minimumOrderQuantity ?? 1,
     // tags: always a comma-string in the form input, regardless of what type DB returns
     tags: Array.isArray(initialData.tags)
       ? initialData.tags.join(', ')
@@ -115,7 +140,11 @@ export function ProductForm({ initialData = {}, productId = null }) {
         fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: dataUrl, folder: 'products' }),
+          // Issue 3 (SEO): `name` becomes a descriptive slug in the uploaded image's URL (e.g.
+          // ".../products/bitter-gourd-a1b2c3.webp") instead of a random filename — only matters if
+          // the admin has already typed a Product Name by the time they upload; harmless/optional
+          // otherwise (falls back to a generic name server-side, see lib/cloudinary.js).
+          body: JSON.stringify({ image: dataUrl, folder: 'products', name: form.name }),
         })
           .then((res) => res.json())
           .then((data) => {
@@ -136,6 +165,16 @@ export function ProductForm({ initialData = {}, productId = null }) {
     }));
   };
 
+  // Issue 7: repeatable admin-defined label/value spec rows. Kept in the same functional-update
+  // style as every other array field on this form (harvestingMonths above, images elsewhere) so
+  // typing in one row's input never stomps on another row's in-flight edit.
+  const addField = () => setForm(p => ({ ...p, additionalFields: [...(p.additionalFields || []), { label: '', value: '' }] }));
+  const updateField = (idx, key, val) => setForm(p => ({
+    ...p,
+    additionalFields: p.additionalFields.map((f, i) => i === idx ? { ...f, [key]: val } : f),
+  }));
+  const removeField = (idx) => setForm(p => ({ ...p, additionalFields: p.additionalFields.filter((_, i) => i !== idx) }));
+
   const selectedCat = categories.find(c => c._id === form.category);
   // Issue 4: no more manual toggle — this is the single source of truth for both the status badge
   // below and what actually gets submitted. null means no months picked yet (nothing to derive from).
@@ -154,8 +193,14 @@ export function ProductForm({ initialData = {}, productId = null }) {
       priceRangeMax: Number(form.priceRangeMax) || null,
       productCost: Number(form.productCost) || null,
       quantity: Number(form.quantity) || 0,
-      minimumOrderQuantity: Number(form.minimumOrderQuantity) || 1,
+      minimumOrderQuantityLocal: Number(form.minimumOrderQuantityLocal) || 1,
+      minimumOrderQuantityInternational: Number(form.minimumOrderQuantityInternational) || 1,
       shelfLife: form.shelfLife === '' || form.shelfLife === null || form.shelfLife === undefined ? null : Number(form.shelfLife),
+      // Issue 7: drop any row the admin left blank (no label typed, or no value) rather than saving
+      // an empty spec tile onto the product details page.
+      additionalFields: (form.additionalFields || [])
+        .map(f => ({ label: String(f.label || '').trim(), value: String(f.value || '').trim() }))
+        .filter(f => f.label && f.value),
       // Issue 4: derived from harvestingMonths, never from a hand-set toggle. Falls back to
       // whatever was already on the product when no months are picked at all (legacy data).
       isHarvestingSeason: computedSeason !== null ? computedSeason : form.isHarvestingSeason,
@@ -173,14 +218,14 @@ export function ProductForm({ initialData = {}, productId = null }) {
     setLoading(false);
     if (data.success) {
       toast.success(productId ? 'Product updated!' : 'Product created!');
-      router.push('/admin/products');
+      router.push(listUrl);
     } else toast.error(data.message || 'Failed');
   };
 
   return (
     <div className="max-w-4xl">
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => router.back()} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+        <button onClick={() => router.push(listUrl)} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
           <ArrowLeft className="w-5 h-5 text-gray-500" />
         </button>
         <div>
@@ -193,7 +238,7 @@ export function ProductForm({ initialData = {}, productId = null }) {
         <div className="flex flex-wrap gap-3">
           {form.images.map((img, i) => (
             <div key={i} className="relative w-24 h-24 rounded-xl overflow-hidden bg-gray-100 group">
-              <Image src={img} alt="" fill className="object-cover" sizes="96px" />
+              <Image src={img} alt={`${form.name || 'Product'} photo ${i + 1}`} fill className="object-cover" sizes="96px" />
               <button
                 onClick={() => setForm(p => ({ ...p, images: p.images.filter((_, idx) => idx !== i) }))}
                 className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -277,8 +322,14 @@ export function ProductForm({ initialData = {}, productId = null }) {
               {['kg', 'ton', 'piece', 'box', 'bundle', 'bag', 'liter'].map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
-          <Input label="Min. Order Qty" type="number" value={form.minimumOrderQuantity} onChange={e => set('minimumOrderQuantity', e.target.value)} />
           <Input label="Shelf Life (Days)" type="number" min="0" placeholder="e.g. 7" value={form.shelfLife} onChange={e => set('shelfLife', e.target.value)} />
+        </div>
+        {/* Issue 8: local and international buyers can need different minimum order quantities (e.g.
+            a small local retail order vs. a bulk export order) — each is stored separately and the
+            product details page shows whichever one matches the viewer's own buyer type. */}
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <Input label="Min. Order Qty — Local Buyers" type="number" hint="Shown to buyers browsing in BDT/local mode" value={form.minimumOrderQuantityLocal} onChange={e => set('minimumOrderQuantityLocal', e.target.value)} />
+          <Input label="Min. Order Qty — International Buyers" type="number" hint="Shown to buyers browsing in USD/export mode" value={form.minimumOrderQuantityInternational} onChange={e => set('minimumOrderQuantityInternational', e.target.value)} />
         </div>
         <div className="mt-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Storage Instructions</label>
@@ -329,6 +380,36 @@ export function ProductForm({ initialData = {}, productId = null }) {
         </div>
       </Section>
 
+      <Section title="🏷️ Additional Specifications">
+        <p className="text-xs text-gray-400 mb-4">
+          Add any extra spec rows this product needs (e.g. "Grade: A+", "Packing: 5kg Carton").
+          Each one shows as its own tile on the product details page, alongside Origin, Season, Min. Order, etc.
+        </p>
+        <div className="space-y-3">
+          {(form.additionalFields || []).map((f, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <Input placeholder="Label (e.g. Grade)" value={f.label} onChange={e => updateField(i, 'label', e.target.value)} />
+              <Input placeholder="Value (e.g. A+)" value={f.value} onChange={e => updateField(i, 'value', e.target.value)} />
+              <button
+                type="button"
+                onClick={() => removeField(i)}
+                aria-label="Remove field"
+                className="mt-1 p-2.5 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={addField}
+          className="mt-3 flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-600 dark:text-gray-300 hover:border-brand hover:text-brand transition-all"
+        >
+          + Add Field
+        </button>
+      </Section>
+
       <Section title="⚙️ Settings & Visibility">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-3">
@@ -347,7 +428,7 @@ export function ProductForm({ initialData = {}, productId = null }) {
         <Button onClick={handleSubmit} loading={loading} variant="primary" size="lg" icon={Save}>
           {productId ? 'Update Product' : 'Create Product'}
         </Button>
-        <Button onClick={() => router.back()} variant="ghost" size="lg">Cancel</Button>
+        <Button onClick={() => router.push(listUrl)} variant="ghost" size="lg">Cancel</Button>
       </div>
     </div>
   );

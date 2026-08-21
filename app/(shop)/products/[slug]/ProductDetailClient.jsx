@@ -18,13 +18,13 @@ import RecommendedForYou from '@/components/product/RecommendedForYou';
 import ActiveCampaignsStrip from '@/components/product/ActiveCampaignsStrip';
 import QuotationModal from '@/components/product/QuotationModal';
 import ImageLightbox from '@/components/ui/ImageLightbox';
-import { isProductVisibleToBuyer, isCampaignVisibleToBuyer } from '@/lib/utils';
+import { isProductVisibleToBuyer, isCampaignVisibleToBuyer, getMoqForBuyer } from '@/lib/utils';
 import SpecialSectionComp from '@/components/home/SpecialSection';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { ShoppingCart, MessageSquare, Phone, Mail, Share2, CheckCircle, Leaf, MapPin, Award, Calendar, Heart, GitCompareArrows, ZoomIn, Sprout } from 'lucide-react';
+import { ShoppingCart, MessageSquare, Phone, Mail, Share2, CheckCircle, Leaf, MapPin, Award, Calendar, Heart, GitCompareArrows, ZoomIn, Sprout, Tag } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -38,7 +38,12 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
   const { addToCompare, isInCompare, removeFromCompare } = useCompareStore();
   const { data: session } = useSession();
   const router = useRouter();
-  const [qty, setQty] = useState(product.minimumOrderQuantity || 1);
+  // Issue 8: local and international buyers can have different Minimum Order Quantities for the
+  // same product — computed once here (depends on which buyer type is viewing) and reused for the
+  // quantity stepper's starting value, its lower clamp, and the "Min. Order" spec tile below, so all
+  // three always agree with each other.
+  const effectiveMoq = getMoqForBuyer(product, buyerType);
+  const [qty, setQty] = useState(effectiveMoq);
   const [activeImg, setActiveImg] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
@@ -131,7 +136,7 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
             <div className="flex gap-2 overflow-x-auto pb-1">
               {images.map((img, i) => (
                 <button key={i} onClick={() => setActiveImg(i)} className={`flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${i === activeImg ? 'border-brand scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-                  <Image src={img} alt="" width={64} height={64} className="object-cover w-full h-full" />
+                  <Image src={img} alt={`${product.name} - view ${i + 1}`} width={64} height={64} className="object-cover w-full h-full" />
                 </button>
               ))}
             </div>
@@ -182,11 +187,13 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
               { icon: MapPin, label: 'Origin', value: product.countryOfOrigin },
               { icon: Leaf, label: 'Location', value: product.harvestingLocation },
               { icon: Calendar, label: 'Season', value: product.harvestingSeason },
-              { icon: Award, label: 'Min. Order', value: `${product.minimumOrderQuantity || 1} ${product.unit}` },
+              { icon: Award, label: 'Min. Order', value: `${effectiveMoq} ${product.unit}` },
               ...(product.isOrganic ? [{ icon: Sprout, label: 'Certification', value: 'Organic Certified' }] : []),
               ...(product.shelfLife ? [{ icon: CheckCircle, label: 'Shelf Life', value: `${product.shelfLife} day${product.shelfLife === 1 ? '' : 's'}` }] : []),
-            ].filter(i => i.value).map(({ icon: Icon, label, value }) => (
-              <div key={label} className="flex items-start gap-2 bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3">
+              // Issue 7: admin-defined extra spec rows, appended after the built-in ones above.
+              ...(product.additionalFields || []).map(f => ({ icon: Tag, label: f.label, value: f.value })),
+            ].filter(i => i.value).map(({ icon: Icon, label, value }, idx) => (
+              <div key={`${label}-${idx}`} className="flex items-start gap-2 bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3">
                 <Icon className="w-4 h-4 text-brand mt-0.5 flex-shrink-0" />
                 <div><p className="text-xs text-gray-400">{label}</p><p className="text-sm font-semibold text-gray-800 dark:text-white">{value}</p></div>
               </div>
@@ -210,7 +217,7 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
             <div className="space-y-3 pt-2">
               <div className="flex items-center gap-3">
                 <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                  <button onClick={() => setQty(Math.max(product.minimumOrderQuantity || 1, qty - 1))} className="px-4 py-3 text-xl font-bold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">−</button>
+                  <button onClick={() => setQty(Math.max(effectiveMoq, qty - 1))} className="px-4 py-3 text-xl font-bold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">−</button>
                   <span className="px-4 py-3 font-bold text-gray-900 dark:text-white min-w-[50px] text-center">{qty}</span>
                   <button onClick={() => setQty(qty + 1)} className="px-4 py-3 text-xl font-bold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">+</button>
                 </div>
@@ -299,7 +306,7 @@ export default function ProductDetailClient({ product, sections, activeCampaigns
       <div id="reviews"><ReviewSection productId={product._id} /></div>
 
       {/* Lightbox */}
-      <ImageLightbox images={images} initialIndex={activeImg} isOpen={lightboxOpen} onClose={() => setLightboxOpen(false)} />
+      <ImageLightbox images={images} initialIndex={activeImg} isOpen={lightboxOpen} onClose={() => setLightboxOpen(false)} altPrefix={product.name} />
       <QuotationModal isOpen={showQuote} onClose={() => setShowQuote(false)} product={product} />
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { X } from 'lucide-react';
+import Image from 'next/image';
+import { X, Leaf } from 'lucide-react';
 
 // Issue 7: "Admin will search product and the all the products will be suggested to pick" — a
 // search-as-you-type box that suggests catalog matches immediately on focus (same UX as the
@@ -95,14 +96,23 @@ export default function ProductMultiSelect({ value = [], onChange, placeholder =
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => addProduct(p)}
                 disabled={already}
-                className={`w-full text-left px-3 py-2 border-b border-gray-50 dark:border-gray-700 last:border-0 transition-colors ${already ? 'opacity-40 cursor-default' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                className={`w-full flex items-center gap-2.5 text-left px-3 py-2 border-b border-gray-50 dark:border-gray-700 last:border-0 transition-colors ${already ? 'opacity-40 cursor-default' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               >
-                <p className="text-xs font-medium text-gray-900 dark:text-white">{p.name}{already ? ' (added)' : ''}</p>
-                {(p.scientificName || p.localName) && (
-                  <p className="text-[10px] text-gray-400 italic">
-                    {[p.scientificName, p.localName].filter(Boolean).join(' · ')}
-                  </p>
-                )}
+                {/* Issue 4: thumbnail so the admin can confirm at a glance, same pattern as
+                    ProductNameCombobox and the header search box's own autocomplete. */}
+                <span className="relative w-8 h-8 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+                  {p.images?.[0]
+                    ? <Image src={p.images[0]} alt={p.name} fill className="object-cover" sizes="32px" />
+                    : <Leaf className="w-4 h-4 m-2 text-gray-300" />}
+                </span>
+                <span className="min-w-0">
+                  <p className="text-xs font-medium text-gray-900 dark:text-white truncate">{p.name}{already ? ' (added)' : ''}</p>
+                  {(p.scientificName || p.localName) && (
+                    <p className="text-[10px] text-gray-400 italic truncate">
+                      {[p.scientificName, p.localName].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </span>
               </button>
             );
           })}

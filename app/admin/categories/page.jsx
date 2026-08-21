@@ -8,9 +8,9 @@ import { Plus, Edit2, Trash2, Upload, Image as ImageIcon } from 'lucide-react';
 import { resizeImageFile } from '@/lib/clientImageResize';
 import toast from 'react-hot-toast';
 
-async function uploadImg(file) {
+async function uploadImg(file, name = '') {
   const dataUrl = await resizeImageFile(file, { maxDimension: 800, quality: 0.85 });
-  const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'categories' }) });
+  const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: dataUrl, folder: 'categories', name }) });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Upload failed');
   return data.url;
@@ -61,7 +61,11 @@ export default function AdminCategoriesPage() {
     const file = e.target.files?.[0]; if (!file) return;
     setUploading(true);
     try {
-      const url = await uploadImg(file);
+      // Issue 3 (SEO): pass whatever name is already typed as the upload's slug hint — the
+      // subcategory's own name when uploading one of ITS images (falling back to the parent
+      // category's name if that subcategory's name is still blank), otherwise the category's name.
+      const seoName = subcatIdx !== undefined ? (form.subcategories[subcatIdx]?.name || form.name) : form.name;
+      const url = await uploadImg(file, seoName);
       subcatIdx !== undefined ? setSubcat(subcatIdx, field, url) : set(field, url);
       toast.success('Uploaded!');
     } catch (err) { toast.error(err.message || 'Upload failed'); }

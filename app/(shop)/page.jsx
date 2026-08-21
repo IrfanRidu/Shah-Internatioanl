@@ -70,55 +70,59 @@ async function getHomeData() {
     Banner.find({ isActive: true, type: 'popup', position: { $in: ['home', 'all'] } }).sort({ displayOrder: 1 }).lean(),
   ]);
 
-  // Issue 13: a single, page-wide "already shown" set so no product repeats anywhere on the
-  // homepage — including between campaigns and special sections themselves, which are fetched in
-  // parallel above and so can't natively see each other's picks; campaigns (the more
-  // time-sensitive of the two) take priority, and a special section silently drops anything a
-  // campaign already claimed. The algorithmic sections further below then simply skip whatever's
-  // already spoken for, in the priority order the issue lists them: Currently Harvesting, then
-  // Available for Pre-Order, then one section per category. Sequential (not Promise.all) from here
-  // on since each step's exclusion set depends on the previous ones.
-  const excludeIds = new Set();
-  flashSales.forEach(sale => (sale.items || []).forEach(i => i.product && excludeIds.add(String(i.product._id))));
-  sections.forEach(s => { s.products = (s.products || []).filter(p => p && !excludeIds.has(String(p._id))); });
-  sections.forEach(s => (s.products || []).forEach(p => excludeIds.add(String(p._id))));
+  // Batch 20 (issue 2): a single "already claimed" set so no product repeats anywhere on the
+  // homepage — but ONLY fed by FlashSale campaigns and SpecialSections, the literal admin-curated
+  // "campaign or section" a product can be deliberately assigned to (per this batch's own wording:
+  // "if any product is selected for any campaign or section, the product will be displayed on the
+  // campaign or section"). Campaigns (more time-sensitive) take priority; a special section silently
+  // drops anything a campaign already claimed.
+  //
+  // Featured, Currently Harvesting, Available for Pre-Order, and the per-category sections below are
+  // all algorithmic/dynamic groupings, not something a product is "selected for" — a product CAN
+  // legitimately land in more than one of these at once, the same way a real e-commerce site shows
+  // the same item under Best Sellers AND its own category page. Previously these ALSO excluded each
+  // other in a growing chain, which is what caused a category like Fresh Fruits (heavily represented
+  // in Currently Harvesting during its own season) to be left showing almost nothing in its own
+  // "Shop the Category" section — Harvesting had already claimed most of its products first. They now
+  // all filter against the SAME static campaignsAndSectionsExclude list instead of chaining off each
+  // other, which is also why they can safely run in parallel below (none of them depend on another's
+  // results any more).
+  const campaignsAndSectionsExcludeIds = new Set();
+  flashSales.forEach(sale => (sale.items || []).forEach(i => i.product && campaignsAndSectionsExcludeIds.add(String(i.product._id))));
+  sections.forEach(s => { s.products = (s.products || []).filter(p => p && !campaignsAndSectionsExcludeIds.has(String(p._id))); });
+  sections.forEach(s => (s.products || []).forEach(p => campaignsAndSectionsExcludeIds.add(String(p._id))));
+  const campaignsAndSectionsExclude = [...campaignsAndSectionsExcludeIds];
 
-  const featuredProducts = await Product.find({ isFeatured: true, isActive: true, _id: { $nin: [...excludeIds] }, ...buyerVisibilityQuery })
-    .populate('category', 'name slug')
-    .sort({ isHarvestingSeason: -1, createdAt: -1 })
-    .limit(12)
-    .lean();
-  featuredProducts.forEach(p => excludeIds.add(String(p._id)));
-
-  // 1. Currently Harvesting — everything in season right now.
-  const harvestingProducts = await Product.find({ isActive: true, isHarvestingSeason: true, _id: { $nin: [...excludeIds] }, ...buyerVisibilityQuery })
-    .populate('category', 'name slug')
-    .sort({ createdAt: -1 })
-    .limit(16)
-    .lean();
-  harvestingProducts.forEach(p => excludeIds.add(String(p._id)));
-
-  // 2. Available for Pre-Order — off-season products still orderable ahead of harvest. Matches
-  // the existing product-detail-page badge logic (⏰ Pre-Order shown exactly when NOT harvesting).
-  const preOrderProducts = await Product.find({ isActive: true, allowPreOrder: true, isHarvestingSeason: false, _id: { $nin: [...excludeIds] }, ...buyerVisibilityQuery })
-    .populate('category', 'name slug')
-    .sort({ createdAt: -1 })
-    .limit(16)
-    .lean();
-  preOrderProducts.forEach(p => excludeIds.add(String(p._id)));
-
-  // 3. One section per category, in category displayOrder — whatever's left in each, after 1 & 2
-  // and each other have taken their share. Categories with nothing left are simply omitted.
-  const categorySections = [];
-  for (const cat of allCategories) {
-    const products = await Product.find({ isActive: true, category: cat._id, _id: { $nin: [...excludeIds] }, ...buyerVisibilityQuery })
+  const [featuredProducts, harvestingProducts, preOrderProducts, categorySectionsRaw] = await Promise.all([
+    Product.find({ isFeatured: true, isActive: true, _id: { $nin: campaignsAndSectionsExclude }, ...buyerVisibilityQuery })
+      .populate('category', 'name slug')
       .sort({ isHarvestingSeason: -1, createdAt: -1 })
       .limit(12)
-      .lean();
-    if (products.length === 0) continue;
-    products.forEach(p => excludeIds.add(String(p._id)));
-    categorySections.push({ category: cat, products });
-  }
+      .lean(),
+    // 1. Currently Harvesting — everything in season right now.
+    Product.find({ isActive: true, isHarvestingSeason: true, _id: { $nin: campaignsAndSectionsExclude }, ...buyerVisibilityQuery })
+      .populate('category', 'name slug')
+      .sort({ createdAt: -1 })
+      .limit(16)
+      .lean(),
+    // 2. Available for Pre-Order — off-season products still orderable ahead of harvest. Matches
+    // the existing product-detail-page badge logic (⏰ Pre-Order shown exactly when NOT harvesting).
+    Product.find({ isActive: true, allowPreOrder: true, isHarvestingSeason: false, _id: { $nin: campaignsAndSectionsExclude }, ...buyerVisibilityQuery })
+      .populate('category', 'name slug')
+      .sort({ createdAt: -1 })
+      .limit(16)
+      .lean(),
+    // 3. One section per category, in category displayOrder — categories with nothing left (after
+    // only campaigns/sections have taken their share) are simply omitted.
+    Promise.all(allCategories.map(cat =>
+      Product.find({ isActive: true, category: cat._id, _id: { $nin: campaignsAndSectionsExclude }, ...buyerVisibilityQuery })
+        .sort({ isHarvestingSeason: -1, createdAt: -1 })
+        .limit(12)
+        .lean()
+        .then(products => ({ category: cat, products }))
+    )),
+  ]);
+  const categorySections = categorySectionsRaw.filter(cs => cs.products.length > 0);
 
   return { categories, featuredProducts, flashSales, sections, heroBanners, promoBanners, popupBanners, harvestingProducts, preOrderProducts, categorySections };
 }

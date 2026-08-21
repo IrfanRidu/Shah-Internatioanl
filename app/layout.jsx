@@ -22,13 +22,22 @@ export const viewport = {
 };
 
 export const metadata = {
+  // Batch 20 (issue 3): required for Next.js to resolve the relative openGraph/twitter image paths
+  // below into absolute URLs (without it, Next.js falls back to localhost in production and emits a
+  // build warning) — same NEXTAUTH_URL-based site URL convention already used by app/sitemap.js and
+  // lib/email.js.
+  metadataBase: new URL(process.env.NEXTAUTH_URL || 'https://shahinternational.com'),
   title: { default: 'Shah International – Farm Fresh Exports', template: '%s | Shah International' },
   description: 'Premium farm-fresh vegetables and fruits exported globally from Bangladesh.',
   keywords: ['farm fresh', 'Bangladesh export', 'vegetables', 'fruits', 'Shah International', 'halal', 'organic'],
   manifest: '/manifest.json',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Shah International' },
-  openGraph: { title: 'Shah International', description: 'Farm Fresh. Global Reach.', type: 'website', siteName: 'Shah International' },
-  twitter: { card: 'summary_large_image', title: 'Shah International', description: 'Farm Fresh. Global Reach.' },
+  // Batch 20 (issue 3): site-wide fallback OG/Twitter image — any page that doesn't set its own more
+  // specific one (e.g. a product's own photo) still shows SOMETHING when shared, instead of no
+  // preview image at all. Product/category pages override this with their own image via their own
+  // generateMetadata (see app/(shop)/products/[slug]/page.jsx and app/(shop)/categories/[slug]/page.jsx).
+  openGraph: { title: 'Shah International', description: 'Farm Fresh. Global Reach.', type: 'website', siteName: 'Shah International', images: ['/icons/icon-512x512.png'] },
+  twitter: { card: 'summary_large_image', title: 'Shah International', description: 'Farm Fresh. Global Reach.', images: ['/icons/icon-512x512.png'] },
 };
 
 export default async function RootLayout({ children }) {

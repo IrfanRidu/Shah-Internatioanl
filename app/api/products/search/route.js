@@ -4,26 +4,25 @@ import Product from '@/models/Product';
 // Batch 17 (R9): required by .populate('category', ...) below — see the fuller comment in
 // app/(shop)/products/[slug]/page.jsx for why this direct import is necessary.
 import Category from '@/models/Category';
+// Batch 20 (issue 4): reuses the SAME normalize/escape helpers buildProductQuery (the storefront's
+// main product-listing search) already uses, instead of this route's own separate copy — so a search
+// behaves identically here (header/home autocomplete) and there (case-insensitive, and now also
+// tolerant of stray leading/trailing whitespace or punctuation, and of punctuation differences
+// between words — see lib/utils.js's own comments on each for the full reasoning).
+import { normalizeSearchTerm, buildFlexibleSearchRegexSource } from '@/lib/utils';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and
 // must never be statically cached/prerendered (prevents both stale data and the
 // DYNAMIC_SERVER_USAGE crash when headers()/cookies() are used via getServerSession).
 export const dynamic = 'force-dynamic';
 
-// Same escaping this catalog's other search entry point (buildProductQuery in lib/utils.js) already
-// applies — kept as a local copy rather than importing escapeRegex since that helper isn't exported
-// from lib/utils.js. Without it, a query containing an unbalanced '(' (extremely common mid-type
-// against botanical names like "Mango (Mangifera indica)") throws inside $regex, which the catch
-// block below turns into a 500 the storefront's autocomplete box can only show as "no results".
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 export async function GET(request) {
   try {
     await connectDB();
     const { searchParams } = new URL(request.url);
-    const q = searchParams.get('q')?.trim();
+    const q = normalizeSearchTerm(searchParams.get('q'));
     if (!q || q.length < 2) return NextResponse.json({ success: true, results: [] });
-    const safeQ = escapeRegex(q);
+    const safeQ = buildFlexibleSearchRegexSource(q);
     const results = await Product.find({
       // $ne:false, not ===true — same reasoning as buildProductQuery in lib/utils.js: a product
       // missing the field entirely (predates it, or was inserted outside the normal create flow)

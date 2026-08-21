@@ -712,10 +712,33 @@ export default function ShipmentDetailPage() {
       toast.error(`This shipment is locked — it's part of the claimed Incentive Application "${incentiveApplication.title}".`);
       return;
     }
+
+    // Bug fix (reported via screenshot, mobile — same root cause as the exportLicense/exportCategory/
+    // bankAccount handling a few lines below, just never extended to cover this): a brand new
+    // shipment starts with 3 blank rows in Shipment Details (see ItemsTable's EMPTY() further up),
+    // and its "+ Add Row" button also adds one — both set productId: '' until a product is actually
+    // picked for that row via the combobox. Saving with any row still unpicked sent that literal
+    // empty string straight through, and since items.productId is an ObjectId reference, Mongoose's
+    // cast failed with a raw "Cast to ObjectId failed for value \"\"" error — meaningless and alarming
+    // to whoever hit it, easy to trigger simply by not needing all 3 starting rows. A row with
+    // nothing else filled in either (never actually used — e.g. 2 of the 3 default rows on a
+    // shipment that only needed 1 product) is dropped silently, since it was never meaningful data;
+    // a row with other data filled in but no product chosen is flagged instead of being silently
+    // discarded, so the admin doesn't lose entered data without knowing why.
+    const rowHasOtherData = (r) => [r.productName, r.quantityKg, r.unitPrice, r.totalCTN, r.totalValue].some(v => String(v ?? '').trim() !== '');
+    const incompleteRowIndex = form.items.findIndex(r => !r.productId && rowHasOtherData(r));
+    if (incompleteRowIndex !== -1) {
+      toast.error(`Row ${incompleteRowIndex + 1} in Shipment Details is missing a product — pick one from the list, or remove the row, before saving.`);
+      return;
+    }
+    const cleanedItems = form.items
+      .filter(r => r.productId || rowHasOtherData(r))
+      .map((r, idx) => ({ ...r, slNo: idx + 1 }));
+
     setSaving(true);
     // Auto-fill totals from the master products table (Shipment Details tab)
-    const totalCTN = form.items.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0);
-    const totalNetWeightKg = form.items.reduce((a, r) => a + (Number(r.quantityKg) || 0), 0);
+    const totalCTN = cleanedItems.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0);
+    const totalNetWeightKg = cleanedItems.reduce((a, r) => a + (Number(r.quantityKg) || 0), 0);
     // R8: Order Value is no longer a free-typed input — it's always exactly the Packing List /
     // Shipment Details items total, in the shipment's own base currency (itemsTotalValue is defined
     // further down this component, but by the time this closure actually runs — on a later click,
@@ -724,6 +747,7 @@ export default function ShipmentDetailPage() {
     const nextStatus = activate ? (form.status === 'draft' ? 'active' : form.status) : form.status;
     const payload = {
       ...form,
+      items: cleanedItems,
       status: nextStatus,
       orderValueForeign,
       buyer: buyerId, country: countryId,
@@ -757,7 +781,7 @@ export default function ShipmentDetailPage() {
     const d = await r.json();
     setSaving(false);
     if (d.success) {
-      setFormState(p => ({ ...p, status: d.shipment?.status || nextStatus, orderValueForeign }));
+      setFormState(p => ({ ...p, status: d.shipment?.status || nextStatus, orderValueForeign, items: cleanedItems }));
       toast.success(nextStatus === 'draft' ? 'Saved as draft' : (form.status === 'draft' ? 'Shipment activated!' : 'Shipment saved!'));
       if (isNew) router.push(`/admin/export-dashboard/countries/${countryId}/buyers/${buyerId}/shipments/${d.shipment._id}`);
     } else toast.error(d.message);

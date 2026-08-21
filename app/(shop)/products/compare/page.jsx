@@ -7,10 +7,11 @@ import Link from 'next/link';
 import StarRating from '@/components/product/StarRating';
 import SeasonLabel from '@/components/product/SeasonLabel';
 import { X, CheckCircle, XCircle } from 'lucide-react';
+import { getMoqForBuyer } from '@/lib/utils';
 
 export default function ComparePage() {
   const { items, removeFromCompare } = useCompareStore();
-  const { isLocal } = useBuyerType();
+  const { buyerType, isLocal } = useBuyerType();
   const { format, formatUSD } = useCurrency();
 
   if (items.length < 2) {
@@ -28,7 +29,7 @@ export default function ComparePage() {
     { label: 'Price (Local)', key: p => isLocal ? format(p.discountPrice || p.price || 0) : 'N/A' },
     { label: 'Import Price Range', key: p => !isLocal ? `$${p.priceRangeMin}–$${p.priceRangeMax}` : 'N/A' },
     { label: 'Unit', key: p => p.unit || '—' },
-    { label: 'Min. Order', key: p => `${p.minimumOrderQuantity || 1} ${p.unit}` },
+    { label: 'Min. Order', key: p => `${getMoqForBuyer(p, buyerType)} ${p.unit}` },
     { label: 'Season', key: p => p.harvestingSeason || '—' },
     { label: 'Origin', key: p => p.countryOfOrigin || '—' },
     { label: 'Harvesting Location', key: p => p.harvestingLocation || '—' },

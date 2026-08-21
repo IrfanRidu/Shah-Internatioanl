@@ -106,7 +106,7 @@ export default function FlashSaleSection({ sale }) {
       <div className="rounded-3xl overflow-hidden relative" style={{ backgroundColor: bg }}>
         {sale.bannerImage && (
           <div className="absolute inset-0 opacity-15">
-            <Image src={sale.bannerImage} alt="" fill className="object-cover" sizes="100vw" />
+            <Image src={sale.bannerImage} alt={`${sale.name} campaign banner`} fill className="object-cover" sizes="100vw" />
           </div>
         )}
         <div className="p-6 md:p-8 relative">
@@ -164,10 +164,22 @@ export default function FlashSaleSection({ sale }) {
                     <div className="p-2">
                       <p className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2 mb-1" style={{ minHeight: '2rem' }}>{p.name}</p>
                       <PriceDisplay product={p} size="sm" campaignItem={entry} />
-                      {isLocal && (
+                      {/* Batch 20 follow-up (issue 1): this used to render nothing at all for
+                          international buyers — {isLocal && <button>...}  with no else branch — so
+                          the card just ended right after the price, missing the button row entirely
+                          compared to the local view. Mirrors ProductCard.jsx's own local/international
+                          split exactly (same "Quote" wording, same #quotation anchor + stopPropagation
+                          so the nested link doesn't also trigger the outer card-wide Link, same blue —
+                          kept neutral rather than the campaign's own badgeColor, since Quote is a
+                          site-wide "get in touch" action, not a discount-urgency one). */}
+                      {isLocal ? (
                         <button onClick={(e) => handleAddToCart(e, p, entry)} className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: badgeColor }}>
                           🛒 Add
                         </button>
+                      ) : (
+                        <Link href={`/products/${p.slug}#quotation`} onClick={(e) => e.stopPropagation()} className="mt-1.5 block w-full py-1.5 rounded-lg text-xs font-semibold text-center text-white bg-blue-600 hover:bg-blue-700 transition-all">
+                          💬 Quote
+                        </Link>
                       )}
                     </div>
                   </Link>

@@ -12,7 +12,19 @@ export const revalidate = 0;
 export async function generateMetadata({ params }) {
   await connectDB();
   const cat = await Category.findOne({ slug: params.slug }).lean();
-  return { title: cat?.name || 'Category' };
+  if (!cat) return { title: 'Category' };
+  // Batch 20 (issue 3): this previously returned only a bare title, ignoring the metaTitle/
+  // metaDescription fields the Category schema already has, and never set an openGraph/twitter
+  // image — same gap as the product page, fixed the same way here.
+  const title = cat.metaTitle || cat.name;
+  const description = cat.metaDescription || cat.description;
+  const image = cat.image;
+  return {
+    title,
+    description,
+    openGraph: { title, description, type: 'website', ...(image && { images: [image] }) },
+    twitter: { card: 'summary_large_image', title, description, ...(image && { images: [image] }) },
+  };
 }
 
 export default async function CategoryPage({ params }) {

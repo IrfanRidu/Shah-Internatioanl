@@ -17,7 +17,7 @@ export async function POST(request) {
     if (!session) return NextResponse.json({ success: false, message: 'Please login' }, { status: 401 });
 
     const body = await request.json();
-    const { image, folder } = body;
+    const { image, folder, name } = body;
     if (!image) return NextResponse.json({ success: false, message: 'No image provided' }, { status: 400 });
 
     const isAdmin = ['superAdmin', 'admin', 'editor'].includes(session.user.role);
@@ -27,7 +27,11 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 });
     }
 
-    const result = await uploadImage(image, folder || 'shah-international');
+    // Issue 3 (SEO): optional — callers pass whatever title/name field the admin has already typed
+    // (product name, banner title, category name) so the uploaded image gets a descriptive URL slug
+    // instead of a random one. Safe to omit; uploadImage() falls back to Cloudinary's normal random
+    // public_id when there's nothing to work with yet.
+    const result = await uploadImage(image, folder || 'shah-international', name || '');
     return NextResponse.json({ success: true, url: result.url, publicId: result.publicId });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

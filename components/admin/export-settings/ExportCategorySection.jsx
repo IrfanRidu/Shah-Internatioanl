@@ -164,7 +164,7 @@ export default function ExportCategorySection({ currency }) {
               <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-gray-800 flex-shrink-0 overflow-hidden flex items-center justify-center">
                 {form.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={form.image} alt="" className="w-full h-full object-cover" />
+                  <img src={form.image} alt={form.name ? `${form.name} preview` : 'Export category preview'} className="w-full h-full object-cover" />
                 ) : <Tag className="w-6 h-6 text-gray-300" />}
               </div>
               <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl cursor-pointer text-sm font-medium text-gray-600 hover:bg-gray-50 transition-all">
