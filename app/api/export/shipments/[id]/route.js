@@ -122,6 +122,17 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ success: true, shipment: updated });
   }
 
+  // Batch 20 follow-up: same reasoning as documentTextOverridesOnly directly above — Download/Print
+  // both re-fetch the shipment fresh from the server rather than using the editor's own in-memory
+  // form state (see handleDownload in the shipment editor), so switching this dropdown and then
+  // immediately clicking Download, without also clicking the main Save button first, would silently
+  // still use whichever mode was last actually saved. The editor calls this the instant the dropdown
+  // changes (handleHsCodeModeChange) specifically so that scenario can't happen.
+  if (body.bdHsCodeModeOnly) {
+    const updated = await ExportShipment.findByIdAndUpdate(params.id, { $set: { bdHsCodeMode: body.bdHsCodeMode } }, { new: true });
+    return NextResponse.json({ success: true, shipment: updated });
+  }
+
   // Rename action from the shipment list (contracts/[contractId]/page.jsx's quick-rename button)
   // only ever wants to change shipmentNo — same reasoning as documentTextOverridesOnly just above:
   // this route otherwise does a full-document REPLACE, which would require the list view to hold

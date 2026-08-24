@@ -1,10 +1,8 @@
 'use client';
-import { useState } from 'react';
 import { useSettings } from '@/contexts/SettingsContext';
 
 export default function PartnersSection() {
   const { settings } = useSettings();
-  const [paused, setPaused] = useState(false);
 
   const partners = (settings?.partners || []).filter(p => p.isActive !== false && (p.name || p.logo));
   // Batch 19 (R33-2): only duplicate (for a seamless 50%-translate loop) when there's enough real
@@ -28,13 +26,16 @@ export default function PartnersSection() {
         </h2>
       </div>
 
-      <div
-        className="overflow-hidden"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-        onTouchStart={() => setPaused(true)}
-        onTouchEnd={() => setTimeout(() => setPaused(false), 1000)}
-      >
+      {/* Batch 20 follow-up: was pausing on hover/touch (a common, reasonable "let me read this
+          logo" affordance in principle) — but on mobile, simply SCROLLING PAST this section is
+          itself a touch-drag gesture that passes right through its bounding box, firing
+          onTouchStart -> pause on essentially every scroll near it, then onTouchEnd -> resume a
+          second later, over and over as the page is scrolled. animation-play-state toggling doesn't
+          reset progress, but frequent-enough pausing before the track visibly moves far each time
+          reads exactly like "stops and restarts" rather than one continuous sweep — matches the
+          reported symptom precisely, and the user asked for it to never stop sliding at all, so the
+          pause behavior (and the state it required) is removed entirely rather than tuned. */}
+      <div className="overflow-hidden">
         {/* Batch 19 (R33-2): pure CSS keyframe loop now (see globals.css's partners-marquee
             comment for the full root-cause explanation) — was a requestAnimationFrame loop that
             manually tracked a pixel position and reset it against track.scrollWidth read fresh
@@ -46,15 +47,14 @@ export default function PartnersSection() {
             it kept restarting instead of flowing continuously. translateX(-50%) is resolved against
             the track's own current width at paint time, continuously — not a value captured once
             in JS — so it's correct immediately and stays correct no matter when images finish
-            loading. animation-play-state (not unmounting the animation) preserves the exact same
-            hover/touch pause behavior, including the 1s grace period after a touch ends.
-            partners.length < 2: no meaningful loop to animate — content is just the one logo. */}
+            loading. Batch 20 follow-up: no animationPlayState any more — always running, per the
+            comment on the wrapper div above. partners.length < 2: no meaningful loop to animate —
+            content is just the one logo. */}
         <div
           className="flex items-center gap-12 will-change-transform"
           style={{
             width: 'max-content',
             animation: canLoop ? `partners-marquee ${duration}s linear infinite` : 'none',
-            animationPlayState: paused ? 'paused' : 'running',
           }}
         >
           {doubled.map((partner, i) => (

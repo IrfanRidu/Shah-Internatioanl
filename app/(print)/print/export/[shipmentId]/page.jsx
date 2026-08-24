@@ -253,7 +253,14 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
   // regardless of HS-code mode (the admin's configured BD Invoice column set/declaration still
   // applies) — only the item source and botanical-name/header treatment change with the mode.
   const isBdProductMode = type === 'bd-invoice' && shipment.bdHsCodeMode === 'product';
-  const items = ((isBuyer || isBdProductMode) ? shipment.items : shipment.bdItems || []).filter((i) => i.productName);
+  // Batch 20 follow-up: same Category-mode HS Code fix as generateInvoicePDF/assembleDocData in
+  // lib/exportDocuments.js — see generateInvoicePDF's comment there for the full reasoning. Kept
+  // identical across all three renderers so the editor preview, PDF download, and DOCX/XLSX always
+  // agree with each other.
+  const items = ((isBuyer || isBdProductMode)
+    ? shipment.items
+    : (shipment.bdItems || []).map((it) => ({ ...it, hsCode: shipment.exportCategory?.hsCode || it.hsCode }))
+  ).filter((i) => i.productName);
   const currency = shipment.baseCurrency || 'EUR';
   const grand = grandTotals(items);
   const columns = getDocumentColumns(shipment.exportCategory, isBuyer ? 'buyerInvoice' : 'bdInvoice');

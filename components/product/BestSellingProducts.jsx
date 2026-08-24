@@ -35,8 +35,10 @@ export default function BestSellingProducts({ products: productsProp, excludeId,
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Best Selling Products</h2>
       </div>
       <Carousel showArrows autoplay>
+        {/* Batch 20 follow-up (card consistency): standardized from w-48 md:w-56 to w-52 md:w-60 —
+            see the matching comment in RecommendedForYou.jsx for the full reasoning. */}
         {products.map(p => (
-          <div key={p._id} className="flex-shrink-0 w-48 md:w-56">
+          <div key={p._id} className="flex-shrink-0 w-52 md:w-60">
             <ProductCard product={p} />
           </div>
         ))}

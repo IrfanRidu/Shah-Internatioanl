@@ -49,8 +49,13 @@ export default function RecommendedForYou({ products: productsProp, personalized
         {personalized ? 'Based on categories you\'ve ordered from before' : 'Popular picks in this category'}
       </p>
       <Carousel showArrows autoplay>
+        {/* Batch 20 follow-up (card consistency): standardized from w-48 md:w-56 to w-52 md:w-60,
+            matching the majority of this site's other carousels (and now the campaign strip too,
+            after its own consolidation onto ProductCard.jsx) — these 3 sections were rendering the
+            exact same ProductCard component ~8% smaller than everywhere else for no functional
+            reason, just because each carousel section had picked its own width independently. */}
         {products.map(p => (
-          <div key={p._id} className="flex-shrink-0 w-48 md:w-56">
+          <div key={p._id} className="flex-shrink-0 w-52 md:w-60">
             <ProductCard product={p} />
           </div>
         ))}

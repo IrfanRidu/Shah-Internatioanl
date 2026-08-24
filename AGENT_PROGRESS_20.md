@@ -263,3 +263,278 @@ more compact and matches the campaign card's proportions, before packaging.
 tsc --jsx preserve clean on both files.
 
 Delivered as shah-international-v27.zip.
+
+---
+
+## POST-DELIVERY FOLLOW-UP 3 — HS code mode still wrong + Partners marquee + card ratio, 3rd attempt
+
+Three new reports, two with attachments (a BD Invoice PDF, and a reference screenshot of a campaign
+card labeled "SALE OF THE YEAR").
+
+**Issue 1a — Category HS Code mode shows a product's code, not the category's own.** Re-read batch
+19's original design notes (AGENT_PROGRESS_19.md) to check intent before assuming a bug: "Category"
+mode was ALWAYS defined as "rows grouped by category, HS code = computeCategoryBreakdown's existing
+first-non-empty-product-hsCode-in-the-group logic" — i.e. it was never actually sourcing from the
+Export Category's own hsCode field, despite the name. Given the user's explicit clarification that
+"Category HS Code" should mean the ONE code tied to the shipment's overall Export Category
+(ExportCategory.hsCode — confirmed this field already exists and is admin-settable), treated this as
+the now-authoritative requirement and implemented it: every bdItems row's hsCode is overridden to
+shipment.exportCategory?.hsCode (falling back to the old per-row value when the category has none set,
+rather than showing blank) at 4 layers that all needed the same fix — generateInvoicePDF and
+assembleDocData in lib/exportDocuments.js, InvoiceDoc in the print page, AND the shipment editor's own
+seedBdItemsFromShipment (so the admin's live editing view isn't showing a different value than what
+actually downloads — also had to add selectedCategory?.hsCode to that effect's dependency array, since
+switching WHICH category is selected with no other change wouldn't otherwise re-trigger re-seeding).
+Executed 5 test scenarios against the override logic directly, including reconstructing the exact
+2-category-group shape from the attached PDF (Fresh Vegetables + Spices) — 5/5 pass.
+
+**Issue 1b — Product mode downloads showed category-mode's PDF.** Traced handleDownload: it re-fetches
+the shipment fresh from the server rather than using the editor's in-memory form state — meaning
+toggling the mode dropdown WITHOUT also clicking the main Save button first would silently download
+using whatever mode was last actually saved. Confirmed the attached PDF's total absence of an HS Code
+column is most consistent with it predating the mandatory-column fix already delivered in v25 (verified
+that fix is still intact in the current code) rather than a regression, but this stale-selection issue
+is real and separate. Fixed by applying the SAME targeted-immediate-persist pattern this codebase
+already established for documentTextOverrides (handleSaveTextOverride + the documentTextOverridesOnly
+PUT branch) to bdHsCodeMode too: added a bdHsCodeModeOnly branch on the PUT route, and a
+handleHsCodeModeChange function that fires it the instant the dropdown changes, silent on success,
+loud on failure — so Download/Print always reflect the current on-screen selection.
+
+**Issue 2 — Partners & Buyers marquee stutters, described as restarting from center repeatedly.** The
+CSS keyframe itself (translateX(0) to translateX(-50%)) is mathematically sound and the wrapper isn't
+centered by anything in the CSS. Root cause: onTouchStart/onTouchEnd pause handlers meant as a "let me
+read this logo" affordance — but on mobile, simply SCROLLING PAST this section is itself a touch-drag
+gesture through its bounding box, firing pause on nearly every scroll near it and resume a second
+later, repeatedly, as the page is scrolled. animation-play-state toggling doesn't reset progress, but
+frequent-enough pausing before the track visibly moves far each time reads exactly like "stops and
+restarts" — matches the symptom precisely. The user's stated desired behavior ("never stop sliding")
+is itself the fix: removed the pause-on-hover/touch mechanism entirely rather than tuning it, along
+with the paused state it required.
+
+**Issue 3 — Product cards "still too square", 3rd attempt, now with a reference screenshot.** The
+screenshot's badge text ("SALE OF THE YEAR") is an admin-customizable field (sale.badgeText) — strong,
+specific evidence the reference IS FlashSaleSection.jsx's own campaign card, not a hypothetical/
+external design. Did a systematic element-by-element diff between the two components' current code
+(not just eyeballing the screenshot) using that certainty: image ratio was ALREADY matching (15:14,
+confirmed intact from the previous follow-up) and button styling was ALREADY consistent (rounded-lg,
+themed color — both components already did this the same way, contradicting an initial visual
+impression that the reference button looked more fully-pill-shaped than the code actually specifies).
+The one genuine structural difference found: ProductCard.jsx carries an extra category-name line above
+the product name that FlashSaleSection's card doesn't have — shortening the image-to-card ratio
+without changing the image's own aspect ratio at all. Removed that line (and tightened padding/spacing
+to match FlashSaleSection's actual values) rather than touching the ratio a third time. Deliberately
+did NOT copy the campaign card's badge, wishlist/compare-icon absence, or button color: the badge is
+sale-specific and doesn't apply to non-sale products, and wishlist/compare are functioning features
+ProductCard.jsx serves everywhere else on the site that the compact campaign strip doesn't need — the
+user's complaint was specifically about squareness, not a request to strip functionality. Rendered a
+side-by-side visual comparison of the actual updated component against a recreation of the reference
+(same 150px width, same data) before finalizing to confirm the proportions now genuinely align, rather
+than shipping a 3rd guess on reasoning alone.
+
+All 7 touched files (lib/exportDocuments.js, print page, shipment editor, shipments PUT route,
+PartnersSection.jsx, ProductCard.jsx) tsc/node --check clean.
+
+Delivered as shah-international-v28.zip.
+
+---
+
+## POST-DELIVERY FOLLOW-UP 4 — Card UI "didn't update" + redundant hover button replaced with Quick View
+
+Two reports: (1) the product card UI change from the previous follow-up wasn't visible to the user,
+(2) hovering a card shows the exact same action (Add to Cart / Quote / Pre-Order) twice at once —
+once in a hover overlay, once always-visible below it — with an explicit request to replace the
+hover state with a genuine "Quick View" experience (description, specs, add to cart, buy now,
+wishlist, quantity) instead.
+
+**Issue 1 — verified, not re-guessed.** Re-checked components/product/ProductCard.jsx directly:
+aspect-[15/14] and the category-line removal from the previous follow-up are both genuinely present
+in the current code (grep-confirmed). Can't verify what the user is actually looking at — this
+project only ever gets delivered as a zip, with no visibility into if/when it's deployed — so noted
+this transparently in the reply rather than guessing at a cause, and focused the actual work on
+issue 2, which is a substantial, unambiguous, and independently verifiable fix regardless.
+
+**Issue 2 — the redundant hover button, confirmed directly in the code before designing a fix.**
+ProductCard.jsx's hover overlay and its always-visible footer button were BOTH rendering the same
+addToCart/Quote/Pre-Order action for the same product simultaneously on hover — a genuine, confirmed
+duplication, not something needing further diagnosis. Built a new component, QuickViewModal.jsx,
+replacing the hover overlay's content: a full modal with image, name, price (PriceDisplay, default
+non-compact size — confirmed its size prop defaults to 'md' before assuming, so no size prop needed),
+description, and the exact same spec-tile set as the full product-details page (Origin, Season,
+Min. Order via getMoqForBuyer, Certification, Shelf Life, admin-defined additionalFields) — copied
+directly from ProductDetailClient.jsx rather than re-deriving it, so Quick View and the full page can
+never disagree about a product's own specs. For local buyers: quantity stepper (respecting MOQ),
+wishlist toggle (with the same toast feedback ProductCard's own wishlist button already gives —
+added this for consistency after first missing it), Add to Cart, and a new Buy Now action (no such
+concept existed anywhere in the codebase — confirmed via grep — implemented as add-to-cart then
+navigate to /checkout, verified the checkout page reads directly from cart context with no other
+prerequisite, and confirmed CartContext's addItem is a synchronous local state + localStorage write,
+not an async API call, so no race condition against the immediate navigation). For international
+buyers: wishlist plus a Request Quotation button reusing the existing QuotationModal component
+directly rather than reimplementing that flow, nested exactly the same way ProductDetailClient.jsx
+already renders it.
+
+Confirmed before building: every ProductCard consumer already passes a FULL, unrestricted product
+document (grep for .select() across all 5 query sources — none found) — so Quick View uses the
+product prop already in hand rather than needing its own fetch/loading state. Modeled the modal shell
+(portal, mounted guard, body scroll-lock, backdrop click-to-close) directly on the existing
+QuotationModal.jsx rather than inventing a new pattern. Caught and fixed a fabricated placeholder
+image path (/placeholder-product.png doesn't exist in /public — confirmed via find before shipping,
+replaced with the same fallback URL ProductCard.jsx itself already uses). Rendered a mockup of the
+actual layout at mobile width before finalizing to check real-world fit, not just reasoning about
+flexbox in the abstract.
+
+Wired into ProductCard.jsx: added quickViewOpen state, a handleQuickView handler
+(preventDefault+stopPropagation, same pattern as the existing handleAddToCart/handleWishlist/
+handleCompare handlers), replaced the hover overlay's local/international branching with one
+"Quick View" button (reusing the Eye icon, which was already imported but unused), and rendered
+<QuickViewModal> as a sibling after the card's own <Link> (wrapped the whole return in a Fragment
+since a component can only return one root otherwise) — confirmed this is safe for all 9 existing
+consumers since QuickViewModal renders null while closed and portals out of normal flow while open,
+so it can't affect grid/carousel layout either way. Removed the now-unused MessageSquare import.
+
+Both files tsc-clean.
+
+Delivered as shah-international-v29.zip.
+
+---
+
+## POST-DELIVERY FOLLOW-UP 5 — Card redesign corrected: match the reference holistically, not just its ratio
+
+User re-sent the same screenshot with an explicit correction: "i asked for this given product card
+not the current product card is too square" — i.e. the previous follow-up's interpretation was too
+narrow. It treated "too square" as the core, standalone complaint and used the screenshot mainly as
+evidence for a ratio fix, deliberately preserving ProductCard.jsx's own distinct elements (brand-color
+button, wishlist/compare icons, on-image discount badge) on the reasoning that they were legitimate,
+separate design choices not covered by the complaint. The correction makes clear the actual ask was
+always holistic: make the card look like the picture, full stop — "too square" was describing one
+symptom of the gap, not the entirety of it.
+
+Rebuilt with that understanding, treating every visible element in the reference as something to
+actually match rather than something to weigh against "is this really in scope":
+- Removed the on-image "-X%" discount badge — PriceDisplay's own compact layout already shows the
+  discount (strikethrough price + percentage pill) in the text section, exactly where the reference
+  shows it; the image itself was showing the same discount info twice, in spirit the same class of
+  redundancy as the hover-button issue fixed the previous turn.
+- Removed the wishlist + compare corner icons from the image, matching the reference's clean, nothing-
+  overlaid-but-the-badge look. Checked this wasn't a silent functionality cut: wishlist is reachable
+  from Quick View (built + shipped the previous turn, has its own toast-confirmed toggle) so nothing
+  is lost there. Compare specifically is no longer reachable from the card — still available on the
+  full product page — a real, disclosed trade-off rather than an accidental removal, made explicit
+  in the reply rather than left for the user to discover.
+- Kept the season badge (in-season vs. pre-order) — unlike wishlist/compare, this conveys actual
+  product status rather than being a user-preference action, so treated as meaningfully different in
+  kind rather than more clutter to strip for the sake of matching the reference more literally.
+- Increased the product name from text-xs to text-sm — a real, visible size difference this time
+  rather than the previous pass's much subtler spacing-only change (which the user reported as
+  imperceptible).
+- Changed the Add to Cart / Pre-Order button from the site's brand-green to near-black
+  (bg-gray-900/dark:bg-black) and from rounded-lg to rounded-full — the one deliberate new design
+  decision made this pass: the user has now pointed at the same black-button reference image twice,
+  so treated as an explicit, repeated signal rather than an incidental detail of one campaign's own
+  admin-configured color. Made the Quote button (international buyers) rounded-full too for shape
+  consistency between the two possible primary-CTA states, but deliberately left its blue color
+  alone — that distinction (an inquiry action reading differently from a purchase action) wasn't
+  part of what was being corrected.
+
+Rendered a mockup applying every one of these changes side by side against the actual reference
+image before writing any code, specifically to avoid a 5th miss — only started editing once that
+comparison looked genuinely close. Removed handleWishlist/handleCompare and their now-unused
+imports (useStore, useCompareStore, Heart, GitCompareArrows, ShoppingCart, toast) cleanly rather
+than leaving dead code behind. Did not touch QuickViewModal.jsx's own button styling in this pass —
+it wasn't part of what the reference image was showing (a card, not a modal), and introducing more
+unrequested changes to a component shipped one turn ago adds risk without a clear ask backing it;
+flagged this as an easy, separate follow-up if the user wants visual consistency between the two
+surfaces later.
+
+tsc --jsx preserve clean.
+
+Delivered as shah-international-v30.zip.
+
+---
+
+## POST-DELIVERY FOLLOW-UP 6 — Wishlist button restored to the card directly
+
+Direct follow-up to the previous turn's disclosed trade-off: wishlist had been moved off the card
+image entirely (relying on Quick View as its only access point) to get the clean, uncluttered image
+the reference showed. User asked for it back on the card for easy access.
+
+Rather than reverting to the old corner-icon-on-the-image placement (which would reintroduce exactly
+the clutter that was just removed and the reference didn't show), added it as a compact circular
+button directly beside the Add to Cart / Quote button in the info section — outside the image
+entirely, so the clean photo is untouched, while still being a single direct tap from the card with
+no need to open Quick View. Same outline-button / filled-heart-icon-on-active treatment as Quick
+View's own wishlist button (added last turn), kept for visual consistency between the two surfaces.
+Re-added toggleWishlist/isWishlisted from the store and the same toast-confirmation pattern
+ProductCard used before it was removed two turns ago.
+
+Rendered the button row at both the narrowest (150px, matching the mobile carousel width) and widest
+(240px) contexts this component actually renders at before finalizing, to confirm the heart button
+and the Add/Quote button fit comfortably together without crowding at either extreme — confirmed
+clean at both.
+
+tsc --jsx preserve clean.
+
+Delivered as shah-international-v31.zip.
+
+---
+
+## POST-DELIVERY FOLLOW-UP 7 — Structural consolidation: campaign/section cards now render the actual ProductCard component
+
+User: "normal product card and campaign, section product card are not identical all the product cards
+must appear same in size." After 6 rounds of hand-matching FlashSaleSection.jsx's separate card markup
+to ProductCard.jsx's styling value-by-value (and having it drift or be perceived as drifting each
+time), treated this as the right moment for the structurally robust fix rather than a 7th round of the
+same pattern: made campaign cards render the literal same ProductCard component, so "identical" becomes
+a guarantee rather than something to keep re-verifying by eye.
+
+Investigated before changing anything:
+- Confirmed SpecialSection.jsx ("section" cards) already renders <ProductCard> directly — not a gap.
+- Confirmed ActiveCampaignsStrip.jsx (the product-detail-page campaign strip) already reuses
+  FlashSaleSection directly rather than having its own markup — consolidating FlashSaleSection alone
+  covers both campaign contexts (homepage strip and product-page strip) with no separate work needed.
+- Grepped every carousel's own width wrapper and found a second, concrete, independently-real "not
+  same size" cause that had nothing to do with FlashSaleSection at all: 3 of 6 regular carousels
+  (RecommendedForYou, BestSellingProducts, RelatedProducts) used w-48/w-56 while the other 3 used
+  w-52/w-60 — the exact same ProductCard component rendering ~8% smaller in some sections than others,
+  for no reason beyond each section having picked its own width independently. Standardized all 3 to
+  the majority w-52/w-60 value.
+
+Extended ProductCard.jsx with two new, fully-optional props (every existing caller is unaffected by
+just not passing them): campaignItem (threaded into PriceDisplay for correct sale pricing, and into a
+rewritten handleAddToCart using getEffectivePricing — actually executed this against 5 scenarios
+including the exact Mango 50->45 numbers from the reference screenshot, and a case where a product's
+OWN discount is bigger than the campaign's, confirming the bigger discount always wins, matching what
+FlashSaleSection's original hand-rolled version did — 5/5 pass) and campaignBadge (an admin-styled
+pill like "SALE OF THE YEAR", shown in the same top-left slot the season label uses, taking priority
+over it when both would apply rather than stacking two badges in one corner). Passed campaignItem
+through to QuickViewModal too, so opening Quick View on a campaign product shows and correctly
+add-to-carts at the sale price, not the product's regular price.
+
+Rewrote FlashSaleSection.jsx: kept every bit of section-level behavior untouched (branding, countdown,
+auto-scroll/pause, manual arrows, banner) and replaced only the individual-card markup with
+`<ProductCard product={entry.product} campaignItem={entry} campaignBadge={{...}} />` at the
+now-standardized w-52/w-60 width. This also fixes a small pre-existing bug as a side effect of
+sharing ProductCard's own handler: the old inline add-to-cart button called only
+e.preventDefault() (not stopPropagation), so clicking "Add" inside the campaign strip would also
+trigger the card's own outer Link navigation — ProductCard's handler already does both correctly.
+
+Caught a real, separate data-completeness gap while verifying this end to end rather than assuming
+the DB queries already returned enough: both FlashSale/SpecialSection populate calls (homepage AND
+product-details page, the latter via the shared CARD_FIELDS constant) selected only a handful of
+fields — enough for the OLD stripped-down inline card, but missing everything Quick View now needs
+(description, additionalFields, origin/season, both MOQ fields) and category (not populated at all).
+A campaign product's Quick View would have silently shown a sparser, incomplete view compared to the
+same product opened from a regular listing — reintroducing "cards aren't really identical" one layer
+below styling, undetectable by just looking at the closed card. Expanded both selects to include
+everything ProductCard.jsx and QuickViewModal.jsx actually read (enumerated every product.X reference
+across both files rather than guessing), added nested category population matching the
+.populate('category', 'name slug') pattern already used by every other product query on both pages,
+and deliberately kept productCost excluded on both — matching the same admin-only stripping already
+established in app/api/products/[id]/route.js's GET handler, not a blanket unrestricted select.
+
+8 files touched: components/product/ProductCard.jsx, components/product/QuickViewModal.jsx,
+components/home/FlashSaleSection.jsx, components/product/RecommendedForYou.jsx,
+components/product/BestSellingProducts.jsx, components/product/RelatedProducts.jsx,
+app/(shop)/page.jsx, app/(shop)/products/[slug]/page.jsx — all tsc-clean, checked as a batch.
+
+Delivered as shah-international-v32.zip.

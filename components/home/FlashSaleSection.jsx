@@ -2,14 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import Link from 'next/link';
 import Image from 'next/image';
 import CountdownTimer from '@/components/ui/CountdownTimer';
 import { ChevronLeft, ChevronRight, Zap } from 'lucide-react';
-import { useBuyerType } from '@/contexts/BuyerTypeContext';
-import { useCart } from '@/contexts/CartContext';
-import PriceDisplay from '@/components/product/PriceDisplay';
-import { getEffectivePricing } from '@/lib/utils';
+import ProductCard from '@/components/product/ProductCard';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -26,12 +22,24 @@ gsap.registerPlugin(ScrollTrigger);
  * Product cards auto-scroll horizontally once there are more products than
  * fit on screen; auto-scroll pauses on hover/touch and the user can always
  * scroll manually or use the left/right arrow buttons.
+ *
+ * Batch 20 follow-up (card consistency): the individual product cards used to be this component's
+ * own hand-maintained markup — a separate copy of everything ProductCard.jsx already implements
+ * (image, name, price, buy button, badges), at its own fixed 150px width. Every round of feedback on
+ * "the product cards look wrong" meant updating ProductCard.jsx and then remembering to separately
+ * re-apply the same change here, and the two drifted out of sync more than once over the course of
+ * that (a hardcoded rounded-lg black-ish button here, a differently-rounded green one there — not
+ * because either was "wrong" in isolation, just because they were two different pieces of code
+ * describing what should have been one design). Now renders the actual ProductCard component, passed
+ * this campaign's own item (for correct sale pricing — see ProductCard's campaignItem prop) and badge
+ * styling (for the "SALE OF THE YEAR"-style pill, via campaignBadge) — a campaign card and a regular
+ * card are now structurally guaranteed identical, not just visually matched by hand. Width standardized
+ * to w-52 md:w-60, matching the majority of the site's other carousels (see the note in
+ * ProductCarouselSection.jsx) rather than keeping its own different w-48/w-56-adjacent 150px value.
  */
 export default function FlashSaleSection({ sale }) {
   const sectionRef = useRef(null);
   const trackRef = useRef(null);
-  const { isLocal } = useBuyerType();
-  const { addItem } = useCart();
   const [paused, setPaused] = useState(false);
 
   useEffect(() => {
@@ -73,7 +81,8 @@ export default function FlashSaleSection({ sale }) {
 
   // Issue 9: don't blindly overwrite the product's price with the campaign's salePrice — a product
   // can already have its own (better) discount. Keep the product untouched and carry the campaign
-  // item alongside it; PriceDisplay's campaignItem prop picks whichever discount is bigger.
+  // item alongside it; PriceDisplay's campaignItem prop (now reached via ProductCard) picks whichever
+  // discount is bigger.
   const campaignEntries = (sale.items || []).filter(item => item.product);
 
   if (campaignEntries.length === 0) return null;
@@ -90,15 +99,6 @@ export default function FlashSaleSection({ sale }) {
     const track = trackRef.current;
     if (!track) return;
     track.scrollBy({ left: dir === 'left' ? -240 : 240, behavior: 'smooth' });
-  };
-
-  const handleAddToCart = (e, product, campaignItem) => {
-    e.preventDefault();
-    // Issue 9: snapshot whichever discount is bigger into the cart (matches what's displayed),
-    // instead of always the campaign's price regardless of whether it was actually the better deal.
-    const pricing = getEffectivePricing(product, campaignItem);
-    const cartProduct = pricing.hasDiscount ? { ...product, discountPrice: pricing.localPrice } : product;
-    addItem(cartProduct, 1, !product.isHarvestingSeason);
   };
 
   return (
@@ -143,48 +143,15 @@ export default function FlashSaleSection({ sale }) {
             onTouchEnd={() => setTimeout(() => setPaused(false), 1500)}
           >
             <div ref={trackRef} className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth pb-1" style={{ scrollbarWidth: 'none' }}>
-              {campaignEntries.map((entry, i) => {
-                const p = entry.product;
-                return (
-                  <Link
-                    key={i}
-                    href={`/products/${p.slug}`}
-                    className="bg-white dark:bg-gray-900 rounded-xl overflow-hidden flex-shrink-0 relative"
-                    style={{ width: '150px' }}
-                  >
-                    {/* Campaign badge on the product card */}
-                    <div className="absolute top-1.5 left-1.5 z-10">
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow" style={{ backgroundColor: badgeColor, color: badgeTextColor }}>
-                        {badgeText}
-                      </span>
-                    </div>
-                    <div className="relative bg-gray-100" style={{ height: '140px' }}>
-                      {p.images?.[0] && <Image src={p.images[0]} alt={p.name} fill className="object-cover" sizes="150px" />}
-                    </div>
-                    <div className="p-2">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2 mb-1" style={{ minHeight: '2rem' }}>{p.name}</p>
-                      <PriceDisplay product={p} size="sm" campaignItem={entry} />
-                      {/* Batch 20 follow-up (issue 1): this used to render nothing at all for
-                          international buyers — {isLocal && <button>...}  with no else branch — so
-                          the card just ended right after the price, missing the button row entirely
-                          compared to the local view. Mirrors ProductCard.jsx's own local/international
-                          split exactly (same "Quote" wording, same #quotation anchor + stopPropagation
-                          so the nested link doesn't also trigger the outer card-wide Link, same blue —
-                          kept neutral rather than the campaign's own badgeColor, since Quote is a
-                          site-wide "get in touch" action, not a discount-urgency one). */}
-                      {isLocal ? (
-                        <button onClick={(e) => handleAddToCart(e, p, entry)} className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: badgeColor }}>
-                          🛒 Add
-                        </button>
-                      ) : (
-                        <Link href={`/products/${p.slug}#quotation`} onClick={(e) => e.stopPropagation()} className="mt-1.5 block w-full py-1.5 rounded-lg text-xs font-semibold text-center text-white bg-blue-600 hover:bg-blue-700 transition-all">
-                          💬 Quote
-                        </Link>
-                      )}
-                    </div>
-                  </Link>
-                );
-              })}
+              {campaignEntries.map((entry, i) => (
+                <div key={i} className="flex-shrink-0 w-52 md:w-60">
+                  <ProductCard
+                    product={entry.product}
+                    campaignItem={entry}
+                    campaignBadge={{ text: badgeText, color: badgeColor, textColor: badgeTextColor }}
+                  />
+                </div>
+              ))}
             </div>
 
             {/* Manual nav arrows — always available */}

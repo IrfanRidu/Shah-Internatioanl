@@ -16,7 +16,16 @@ import Category from '@/models/Category';
 import ProductDetailClient from './ProductDetailClient';
 import { applyComputedHarvestSeason } from '@/lib/harvestSeason';
 
-const CARD_FIELDS = 'name images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason category isOrganic isFeatured availableForLocal availableForInternational';
+// Batch 20 follow-up (card consistency): expanded from a name/price/image-only subset now that
+// ProductCard.jsx's cards (SpecialSection and, via campaignItem, the campaign strip — both populated
+// through this constant) can open Quick View, which needs description, specs (including
+// additionalFields), origin/season details, and both local/international MOQ fields to show the same
+// complete information a product opened from a regular listing already shows. Deliberately still NOT
+// unrestricted (unlike this site's other product queries) — productCost stays excluded here on
+// purpose, same as the admin-only stripping in app/api/products/[id]/route.js's GET handler; every
+// other field a card or Quick View reads is included so this can't quietly fall out of sync again as
+// either component grows.
+const CARD_FIELDS = 'name localName scientificName images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason category isOrganic isFeatured availableForLocal availableForInternational description shortDescription countryOfOrigin harvestingLocation harvestingSeason shelfLife additionalFields minimumOrderQuantity minimumOrderQuantityLocal minimumOrderQuantityInternational';
 
 export async function generateMetadata({ params }) {
   await connectDB();
@@ -84,7 +93,7 @@ export default async function ProductPage({ params }) {
 
   // 1. Campaigns targeting the product-detail page
   const sectionsRaw = await SpecialSection.find({ isActive: true, position: { $in: ['productDetail', 'both'] }, ...campaignAudienceQuery })
-    .populate({ path: 'products', select: CARD_FIELDS, match: buyerVisibilityQuery })
+    .populate({ path: 'products', select: CARD_FIELDS, match: buyerVisibilityQuery, populate: { path: 'category', select: 'name slug' } })
     .sort('displayOrder')
     .limit(6)
     .lean();
@@ -104,7 +113,7 @@ export default async function ProductPage({ params }) {
   // priceRangeMin/priceRangeMax/images entirely and make every campaign product on this page show a
   // $0/৳0 price with no photo.
   const activeSalesRaw = await FlashSale.find({ isActive: { $ne: false }, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
-    .populate({ path: 'items.product', select: CARD_FIELDS, match: buyerVisibilityQuery })
+    .populate({ path: 'items.product', select: CARD_FIELDS, match: buyerVisibilityQuery, populate: { path: 'category', select: 'name slug' } })
     .limit(6)
     .lean();
   const activeCampaigns = [];

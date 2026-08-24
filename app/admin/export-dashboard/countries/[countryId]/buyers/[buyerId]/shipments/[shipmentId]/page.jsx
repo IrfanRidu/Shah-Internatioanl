@@ -866,6 +866,33 @@ export default function ShipmentDetailPage() {
     }
   };
 
+  // Batch 20 follow-up: persists this one field immediately, the same targeted-$set pattern
+  // handleSaveTextOverride above uses for documentTextOverrides (see that function, and the
+  // matching bdHsCodeModeOnly branch on the shipments PUT route, for the full reasoning). Download/
+  // Print both re-fetch the shipment fresh from the server (see handleDownload), so without this,
+  // picking a different mode here and then immediately clicking Download — without also clicking
+  // the main Save button first — would silently still use whichever mode was last actually saved,
+  // not what's just been selected on screen. Silent on success (a dropdown pick doesn't need its
+  // own toast the way an explicit Save button click does) but loud on failure, since otherwise the
+  // admin would have no idea their selection isn't actually taking effect yet. A brand-new,
+  // never-saved shipment has nothing to persist to yet — Download already refuses to run until
+  // then anyway, and this field goes along with everything else via the normal Save flow once it
+  // exists.
+  const handleHsCodeModeChange = async (mode) => {
+    set('bdHsCodeMode', mode);
+    if (isNew) return;
+    try {
+      const r = await fetch(`/api/export/shipments/${shipmentId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bdHsCodeModeOnly: true, bdHsCodeMode: mode }),
+      });
+      const d = await r.json();
+      if (!d.success) toast.error(d.message || 'Could not save the HS Code mode — Download/Print may still use the previous mode until you save.');
+    } catch {
+      toast.error('Could not save the HS Code mode — Download/Print may still use the previous mode until you save.');
+    }
+  };
+
   // Issue 43: Net Weight and Total Carton are auto-completed from the Packing List items — they must
   // NOT be free-typed by the admin, since they're supposed to always match what's actually in the
   // table below. Freight Cost remains admin-entered (nothing derives it). Gross Weight also remains
@@ -910,13 +937,21 @@ export default function ShipmentDetailPage() {
   // touched anything. Once the admin actually edits qty or price themselves, BdInvoiceTable's
   // updateRow correctly switches to computing totalValue as qty × price from then on (that row is
   // no longer auto-synced at that point anyway — see setBdItems below). HS Code seeds from the
-  // first non-empty HS code found among that category's own items — a sensible starting point;
-  // the cell stays admin-editable afterward exactly like every other BD Invoice field.
+  // shipment's own Export Category (selectedCategory.hsCode) — a single, fixed value applied to
+  // every row, since "Category HS Code" mode means exactly that: one customs classification for the
+  // whole shipment, as distinct from Product mode where each row legitimately carries its own
+  // product's specific code. Batch 20 follow-up: previously seeded from `g.hsCode` (the first
+  // non-empty hsCode found among that category-group's own items) — technically still a PRODUCT's
+  // own code, just picked somewhat arbitrarily from whichever item happened to be first in the
+  // group, which is what caused "Category HS Code mode shows product HS code, not category HS
+  // code." Falls back to that old per-group value when the Export Category itself has no HS code
+  // configured yet, rather than seeding a blank cell. The cell stays admin-editable afterward
+  // exactly like every other BD Invoice field (unchanged from before).
   const seedBdItemsFromShipment = () => {
     return categoryBreakdown.map((g, i) => ({
       slNo: i + 1,
       productName: g.category,
-      hsCode: g.hsCode || '',
+      hsCode: selectedCategory?.hsCode || g.hsCode || '',
       totalCTN: g.totalCTN || '',
       quantityKg: g.quantityKg || '',
       unitPrice: g.quantityKg ? +g.avgPrice.toFixed(2) : '',
@@ -963,8 +998,13 @@ export default function ShipmentDetailPage() {
       Number(r.unitPrice || 0) === Number(next[i]?.unitPrice || 0) &&
       Number(r.totalValue || 0) === Number(next[i]?.totalValue || 0));
     if (!unchanged) setFormState(p => ({ ...p, bdItems: next }));
+    // Batch 20 follow-up: added selectedCategory?.hsCode here — seedBdItemsFromShipment() now reads
+    // it too, and without it in this list, switching WHICH Export Category is selected (with no
+    // other change to Shipment Details) would leave bdItems seeded with the PREVIOUS category's HS
+    // code, since categoryBreakdownSignature above is built purely from the items breakdown and has
+    // no way to notice a category change on its own.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, form.bdItemsLocked, categoryBreakdownSignature]);
+  }, [loading, form.bdItemsLocked, categoryBreakdownSignature, selectedCategory?.hsCode]);
 
   // The ONLY way BdInvoiceTable's onChange fires is from the admin's own click/keystroke inside it
   // (updateRow/addRow/removeRow) — the auto-sync effect above sets bdItems directly and never goes
@@ -1316,7 +1356,7 @@ export default function ShipmentDetailPage() {
               <label className="text-sm font-semibold text-blue-800 dark:text-blue-300 whitespace-nowrap">HS Code Mode:</label>
               <select
                 value={form.bdHsCodeMode}
-                onChange={e => set('bdHsCodeMode', e.target.value)}
+                onChange={e => handleHsCodeModeChange(e.target.value)}
                 className="input-field py-1.5 text-sm w-auto"
                 disabled={locked}
               >

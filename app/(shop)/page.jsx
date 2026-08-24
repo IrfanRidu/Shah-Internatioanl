@@ -53,12 +53,31 @@ async function getHomeData() {
     // price: this populate silently stripped the very fields that price is built from before
     // PriceDisplay ever got a chance to render them. Kept in sync with the SpecialSection populate
     // 4 lines below, which already selected them correctly.
+    // Batch 20 follow-up (card consistency): expanded further, alongside SpecialSection's populate
+    // below — ProductCard.jsx's cards (both are rendered through it) can open Quick View, which reads
+    // description, specs, additionalFields, and both local/international MOQ fields; without them
+    // here, a product opened from a campaign or homepage section would show a visibly sparser Quick
+    // View than the exact same product opened from a regular listing, which quietly reintroduces the
+    // "cards aren't actually identical" problem one level deeper than styling. productCost stays
+    // deliberately excluded (admin-only, same as app/api/products/[id]/route.js's GET handler).
+    // category is nested-populated too, matching the .populate('category', 'name slug') pattern
+    // already used by every other product query on this page (featuredProducts etc. below).
     FlashSale.find({ isActive: { $ne: false }, startTime: { $lte: now }, endTime: { $gte: now }, ...campaignAudienceQuery })
-      .populate({ path: 'items.product', select: 'name localName images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason availableForLocal availableForInternational', match: buyerVisibilityQuery })
+      .populate({
+        path: 'items.product',
+        select: 'name localName scientificName images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason isOrganic isFeatured availableForLocal availableForInternational description shortDescription countryOfOrigin harvestingLocation harvestingSeason shelfLife additionalFields minimumOrderQuantity minimumOrderQuantityLocal minimumOrderQuantityInternational',
+        match: buyerVisibilityQuery,
+        populate: { path: 'category', select: 'name slug' },
+      })
       .sort({ createdAt: -1 })
       .lean(),
     SpecialSection.find({ isActive: true, position: { $in: ['home', 'both'] }, ...campaignAudienceQuery })
-      .populate({ path: 'products', select: 'name localName images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason isFeatured availableForLocal availableForInternational', match: buyerVisibilityQuery })
+      .populate({
+        path: 'products',
+        select: 'name localName scientificName images slug price discountPrice priceRangeMin priceRangeMax unit isHarvestingSeason isOrganic isFeatured availableForLocal availableForInternational description shortDescription countryOfOrigin harvestingLocation harvestingSeason shelfLife additionalFields minimumOrderQuantity minimumOrderQuantityLocal minimumOrderQuantityInternational',
+        match: buyerVisibilityQuery,
+        populate: { path: 'category', select: 'name slug' },
+      })
       .sort('displayOrder')
       .limit(5)
       .lean(),
