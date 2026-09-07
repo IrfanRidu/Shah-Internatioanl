@@ -1352,7 +1352,131 @@ save with a clear, specific message for a row that has other data but no product
 letting either case reach the server as a broken request. Full detail in AGENT_PROGRESS_20.md's
 "POST-DELIVERY HOTFIX" section. Delivered as shah-international-v25.zip.
 
-## 29. Setup Reminder
+## 29. Batch 21 — Bengali Ka Form PDF Rebuilt Against a Fresh Official Reference (R34)
+
+Full detail (including the section-by-section research trail) in AGENT_PROGRESS_21.md. Single-
+feature round: the Bengali Ka Form PDF was reported to be missing tables/rows and diverging from
+the official form, with a fresh, higher-quality reference PDF supplied alongside a detailed
+structure spec. English's PDF path, the DOCX/XLSX generators, and the database schema were all left
+untouched — confirmed by diffing the whole project tree against the pre-round zip: only
+lib/kaFormDocuments.js changed at all, and every changed line sits inside a Bengali-only branch or
+a shared text constant DOCX/XLSX already consumed as a plain string before this round too.
+
+**Page moves to A3 landscape for Bengali only (English still A3 portrait, unchanged).** The spec
+document's own two page-setup sections contradicted each other (one says "portrait," the other
+gives exact A3-landscape point dimensions and repeats "do not use A4"); the fresh reference PDF
+itself is actually A4 portrait (a scaled/printed export, going by its `iLovePDF` producer tag, not
+the form's native size). Went with the explicit, dimensioned landscape instruction and used the
+reference purely for content/structure fidelity rather than its own incidental page size —
+`pageGeometry()` and the `jsPDF` constructor are now lang-aware rather than one shared page size for
+both languages.
+
+**Section (চ)'s real bug wasn't the numbers — it was the header labels (R34-1).** Worth stating
+plainly since it's not obvious from the rendered PDF alone: `sectionFFullRows`'s underlying data was
+already arithmetically correct (a shipment's own printed 10,988 − 8,000 − 0(N/A) = 2,988 already
+matched repat−(freight+commission)=netFOB exactly). The bug was that the Bengali table's HEADER TEXT
+didn't match that data — the column holding repatriated value was labeled "invoice value," the
+column holding freight was labeled "repatriated value," and freight+commission were described as
+one merged header despite being two genuinely separate columns (already correctly split in
+English's own header a few lines away, which is what made this diagnosable without touching any
+math). Relabeled only; zero calculation changes.
+
+**Section (ঙ) drops back to exactly 6 columns, no serial column.** An earlier round (working from a
+different/lower-quality Bengali reference) had added a 7th "SL" column; this fresh reference shows
+the numbering row itself is a column index, not a per-row serial, matching this round's own spec
+exactly ("the table MUST have exactly 6 columns"). Added the missing ১-৬ numbering row.
+
+**Legal citation moves back to the top header.** An earlier round had placed it just above Section
+H for Bengali specifically, from a different reference at the time; this fresh, higher-resolution
+reference is unambiguous that it belongs at the top next to the title (matching where English's own
+citation already sits). Sections (ক)/(খ) also move from heading-then-line-below to heading+value
+inline on one line, matching the reference; Section (গ)'s TT list changes from a bordered table to
+a compact bold wrapped paragraph ("TT NO: x DT: y €z" per entry, pipe-separated); Section (ঘ)'s
+supplier-source cell now correctly shows the Bengali default phrase instead of leaking English —
+root-caused to `models/IncentiveApplication.js`'s own schema `default` for that field being
+hardcoded English, which silently defeated the PDF code's own pre-existing lang-aware fallback;
+fixed at the PDF template layer (not the schema) so genuine admin-entered overrides still pass
+through untouched in either language. Section (জ) gains the 4 descriptive column headers it was
+missing entirely (previously only bare numbers ১-৪ with no text above them) and its final payable-
+amount line reverts to Latin numerals + "BDT" (was drifting to Bengali digits + "টাকা"). Every
+monetary figure across all four rebuilt tables now gets a consistent "€ 1,234.56"-style currency-
+symbol prefix (was a mix of bare numbers and, in one spot, the Bengali currency word glued directly
+to the figure with no space). Gray table shading removed everywhere in favor of the plain black-
+border-on-white look the official form actually uses.
+
+**Verification without a real renderer.** This environment has no network (can't npm install) and
+lib/bengaliText.js needs a browser canvas + FontFace to rasterize actual glyphs — so, same
+limitation prior rounds already hit, no pixel-level image could be produced here. Built a throwaway
+Node smoke-test harness instead (mocked jspdf/jspdf-autotable/xlsx/bengaliText with a
+character-width heuristic, deliberately biased conservative) that executes the real
+`generateKaFormPDF('bn')` end-to-end against synthetic data built from the user's own reference
+PDF's exact figures. 7 shipments (the spec's stated target) fit on one page; 10 shipments (the
+`MAX_SHIPMENTS_PER_INCENTIVE_APPLICATION` business rule, intentionally left at 10, not lowered to 7
+as the spec's own PDF-layout target might suggest) overflows cleanly to a 2nd page via the existing
+safety net rather than dropping rows. Every cross-checkable computed total in the trace (Section D's
+value, Section E/F's TOTAL rows, Section B's contract line, Section E's per-row date formats)
+matched the reference PDF's own printed figures exactly.
+
+**Known limitations flagged, not silently resolved:** A3-landscape-over-portrait was a judgment call
+on a self-contradicting spec (one constant to flip back if wrong); Bengali font is still
+FreeSansBengali.ttf (no network this round to fetch the spec's own suggested Noto Serif/Sans
+Bengali); no real rendered image was produced this round, only real-code-path execution — a genuine
+PDF generated from the running app with real data is the recommended final visual check.
+
+**Post-delivery correction: reverted to A3 portrait.** The user confirmed immediately after
+delivery that landscape was a mistake on their own part — portrait is what's wanted, which also
+matches this app's own pre-existing Bengali page size from R25 onward and the real reference PDF's
+own proportions (A4 portrait; A3 portrait is the same shape, 41% bigger linearly). Reverted
+`pageGeometry`/the `jsPDF` constructor to plain portrait for both languages (removing the brief
+lang-parameterization this round had introduced) and margin back to 14mm. With portrait's much
+taller 420mm canvas to work with, took the opportunity to relax the table/heading font sizes and
+padding back up from the tight values landscape's shorter 297mm had needed — re-verified via the
+same smoke-test harness: the 7-shipment case now uses 344mm of the available 406mm (62mm to spare,
+vs. landscape's final ~4mm), and even the 10-shipment above-spec edge case now fits on one page,
+which landscape could not do. No content/structure changes from R34's original fixes — page
+geometry and its dependent sizing only.
+
+## 30. Batch 22 — English Ka Form PDF Brought In Line With the Bengali Structure (R35)
+
+Full detail in AGENT_PROGRESS_22.md. Direct follow-up to Batch 21/R34: same Ka Form feature, this
+round scoped explicitly to the ENGLISH PDF branch only ("not the bengali one"). Bengali PDF is the
+structural/order reference; the current English PDF is the wording/terminology reference.
+
+Turned out to need far less rework than Bengali did — every stored English text constant (title,
+citation, section headings, all static notes, the full declaration, both signatory lines) already
+matched the instruction document's own quoted text word for word, Section F's headers already
+correctly lined up against their data (the exact bug Bengali had), and Section H already had its
+full 4-column descriptive headers (also exactly what Bengali was missing). Two confirmed, narrow
+fixes, both English-only:
+- **Gray table shading removed** (`TABLE_STYLE`'s head/foot fill, the shared style object every
+  autoTable-based section spreads in) — same fix R34 already made to Bengali's own hand-rolled table
+  renderer, now applied to the constant only English tables consume. Head/foot font also trimmed
+  8→7pt (still within this round's own suggested 7-9pt range) to help the long English headers in
+  Sections E/F/H wrap more efficiently.
+- **Section D's missing "1 | 2 | 3" numbering row added** — was absent from the table entirely,
+  confirmed both on the rasterized current PDF and in the code's own `head` array.
+
+Equally deliberate about what was **not** changed, on close reading rather than a first-glance
+assumption: Section F keeps its per-row incentive figure for English (the instruction doc explicitly
+lists it as a per-row field here, unlike Bengali's own reference, which blanks it); Sections A/B keep
+their existing heading-then-line-below layout (the instruction doc is section-specific and explicit:
+"keep the entire value inline in the same visual style as the CURRENT ENGLISH PDF," overriding a more
+general framing elsewhere that could otherwise have been read as asking to import Bengali's own
+inline positioning); Section E's column widths stay on autoTable's automatic content-based sizing
+rather than hardcoded percentages, since that default already produces the non-equal distribution
+asked for.
+
+**Verification needed a smarter test mock this round.** R34 never exercised `jspdf-autotable` at all
+(Bengali uses its own renderer); this round's smoke-test harness needed a genuinely realistic mock of
+it to check the 7-shipment one-page fit meaningfully. The first version of that mock used a naive
+proportional-width model that let one very long header column starve the other six below their own
+single-line width — an artifact of the mock, not of the real renderer — and was caught and corrected
+(to a proper greedy word-wrap model: every column gets at least its longest single word, leftover
+width distributed by relative content length) before trusting its results. After the fix: 7 shipments
+fit with 37mm to spare on the same A3 portrait page Bengali also uses, in the same comfortable range
+R34 achieved; Bengali's own numbers were re-checked after every edit this round and never moved.
+
+## 31. Setup Reminder
 
 ```bash
 npm install
