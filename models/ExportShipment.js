@@ -11,6 +11,11 @@ const ShipmentItemSchema = new mongoose.Schema({
   productName: String,
   productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
   botanicalName: String,
+  // Bangla/local name — snapshot of the selected catalog Product's own localName, same auto-fill-
+  // then-independently-editable pattern as botanicalName above. Shown as its own "Bangla Name"
+  // column on Packing List, Buyer's Invoice, and BD Invoice (per the reference documents), on both
+  // `items` (the master table) and `bdItems` (BD Invoice's own rows).
+  localName: String,
   // batch 17 (R1/R2/R3) — snapshot of the selected catalog Product's own category NAME (Product.
   // category -> Category.name; a storefront catalog category like "Fresh Fruits", NOT the same
   // thing as the shipment-level ExportCategory used for incentives/document-format selection),

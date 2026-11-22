@@ -34,8 +34,8 @@ function ChartCard({ title, subtitle, children }) {
   );
 }
 
-const fmtUSD = (n) => `$${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-const fmtBDT = (n) => `৳${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const fmtUSD = (n) => `$${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtBDT = (n) => `৳${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtKg = (n) => `${(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`;
 
 const STATUS_LABELS = { draft: 'Draft', active: 'Active', completed: 'Completed', archived: 'Archived' };

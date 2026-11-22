@@ -8,6 +8,7 @@ import Loader from '@/components/ui/Loader';
 import Button from '@/components/ui/Button';
 import { format } from 'date-fns';
 import { MapPin, Package, CreditCard, X, Download, CheckCircle, Truck } from 'lucide-react';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 const STATUS_BADGE = { pending: 'warning', confirmed: 'info', processing: 'info', onTheWay: 'primary', delivered: 'success', cancelled: 'danger', returned: 'danger' };
@@ -74,7 +75,7 @@ export default function OrderDetailPage() {
             <Link href="/orders" className="text-gray-400 hover:text-gray-600 text-sm">← My Orders</Link>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Order #{order.orderNumber}</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{format(new Date(order.createdAt), 'dd MMMM yyyy, hh:mm a')}</p>
+          <p className="text-sm text-gray-500 mt-0.5">{formatDate(order.createdAt)}, {format(new Date(order.createdAt), 'hh:mm a')}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <Badge variant={STATUS_BADGE[order.status] || 'default'} className="text-sm px-3 py-1.5">
@@ -143,16 +144,16 @@ export default function OrderDetailPage() {
                     {item.isPreOrder && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Pre-Order</span>}
                   </div>
                 </div>
-                <p className="font-bold text-gray-900 dark:text-white text-sm">৳{(item.price * item.quantity)?.toLocaleString()}</p>
+                <p className="font-bold text-gray-900 dark:text-white text-sm">৳{formatMoney2(item.price * item.quantity)}</p>
               </div>
             ))}
           </div>
           <div className="border-t border-gray-100 dark:border-gray-800 mt-4 pt-4 space-y-2">
-            <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>৳{order.subtotal?.toLocaleString()}</span></div>
-            {order.couponDiscount > 0 && <div className="flex justify-between text-sm text-green-600"><span>Coupon ({order.couponCode})</span><span>-৳{order.couponDiscount}</span></div>}
-            <div className="flex justify-between text-sm text-gray-500"><span>Delivery</span><span className={order.deliveryCharge === 0 ? 'text-green-600' : ''}>{order.deliveryCharge === 0 ? 'FREE' : `৳${order.deliveryCharge}`}</span></div>
+            <div className="flex justify-between text-sm text-gray-500"><span>Subtotal</span><span>৳{formatMoney2(order.subtotal)}</span></div>
+            {order.couponDiscount > 0 && <div className="flex justify-between text-sm text-green-600"><span>Coupon ({order.couponCode})</span><span>-৳{formatMoney2(order.couponDiscount)}</span></div>}
+            <div className="flex justify-between text-sm text-gray-500"><span>Delivery</span><span className={order.deliveryCharge === 0 ? 'text-green-600' : ''}>{order.deliveryCharge === 0 ? 'FREE' : `৳${formatMoney2(order.deliveryCharge)}`}</span></div>
             <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-100 dark:border-gray-800">
-              <span>Total</span><span className="text-brand">৳{order.total?.toLocaleString()}</span>
+              <span>Total</span><span className="text-brand">৳{formatMoney2(order.total)}</span>
             </div>
           </div>
         </div>
@@ -207,7 +208,7 @@ export default function OrderDetailPage() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-gray-800 dark:text-white text-sm capitalize">{STATUS_ICON[h.status]} {h.status}</span>
-                    <span className="text-xs text-gray-400">{format(new Date(h.timestamp), 'dd MMM yyyy, hh:mm a')}</span>
+                    <span className="text-xs text-gray-400">{formatDate(h.timestamp)}, {format(new Date(h.timestamp), 'hh:mm a')}</span>
                   </div>
                   {h.note && <p className="text-xs text-gray-500 mt-0.5">{h.note}</p>}
                 </div>

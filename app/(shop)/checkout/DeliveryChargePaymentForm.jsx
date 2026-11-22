@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import Button from '@/components/ui/Button';
 import { Lock } from 'lucide-react';
+import { formatMoney2 } from '@/lib/utils';
 
 /**
  * Small inline Stripe payment form for prepaying just the delivery charge
@@ -56,7 +57,7 @@ export default function DeliveryChargePaymentForm({ amount, onSuccess }) {
       </div>
       {error && <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-600">{error}</div>}
       <Button type="submit" variant="primary" className="w-full" size="sm" loading={loading || !stripe}>
-        <Lock className="w-3.5 h-3.5" /> Pay Delivery Charge — ৳{amount?.toLocaleString()}
+        <Lock className="w-3.5 h-3.5" /> Pay Delivery Charge — ৳{formatMoney2(amount)}
       </Button>
       <p className="text-center text-xs text-gray-400 flex items-center justify-center gap-1">
         <Lock className="w-3 h-3" /> Secured by Stripe

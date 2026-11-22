@@ -7,6 +7,7 @@ import Input from '@/components/ui/Input';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
 import { resizeImageFile } from '@/lib/clientImageResize';
+import { formatDate } from '@/lib/utils';
 
 const EMPTY = { licenseType: '', licenseName: '', licenseNo: '', activationDate: '', expiryDate: '', letterheadUrl: '', tinNo: '', binNo: '', rexNo: '', ercNumber: '', address: '', ownerName: '', phone: '', email: '' };
 const toDateInput = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
@@ -124,7 +125,7 @@ export default function ExportLicenseSection({ categories }) {
               {l.ownerName && <p className="text-xs text-gray-400 mt-1">{l.ownerName}</p>}
               {l.expiryDate && (
                 <p className={`text-xs mt-1.5 font-medium ${isExpired(l) ? 'text-red-500' : 'text-gray-400'}`}>
-                  {isExpired(l) ? '⚠️ Expired' : 'Expires'} {new Date(l.expiryDate).toLocaleDateString()}
+                  {isExpired(l) ? '⚠️ Expired' : 'Expires'} {formatDate(l.expiryDate)}
                 </p>
               )}
             </div>

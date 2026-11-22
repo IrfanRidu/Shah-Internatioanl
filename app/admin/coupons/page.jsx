@@ -8,7 +8,8 @@ import Loader from '@/components/ui/Loader';
 import { Plus, Edit2, Trash2, Copy } from 'lucide-react';
 import ProductMultiSelect from '@/components/admin/ProductMultiSelect';
 import toast from 'react-hot-toast';
-import { format, isAfter, isBefore } from 'date-fns';
+import { isAfter, isBefore } from 'date-fns';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 const EMPTY = { code: '', description: '', type: 'percentage', value: '', minimumOrderAmount: '0', maximumDiscount: '', usageLimit: '', usagePerUser: '1', validFrom: '', validUntil: '', isActive: true, applicableFor: 'all', applicableProducts: [] };
 
@@ -80,10 +81,10 @@ export default function AdminCouponsPage() {
                         <button onClick={() => { navigator.clipboard.writeText(c.code); toast.success('Copied!'); }}><Copy className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" /></button>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-gray-800 dark:text-white">{c.type === 'percentage' ? `${c.value}%` : `৳${c.value}`}</td>
-                    <td className="px-4 py-3 text-gray-500">৳{c.minimumOrderAmount || 0}</td>
+                    <td className="px-4 py-3 font-semibold text-gray-800 dark:text-white">{c.type === 'percentage' ? `${c.value}%` : `৳${formatMoney2(c.value)}`}</td>
+                    <td className="px-4 py-3 text-gray-500">৳{formatMoney2(c.minimumOrderAmount || 0)}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{c.usedCount}/{c.usageLimit || '∞'}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{format(new Date(c.validUntil), 'dd MMM yyyy')}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(c.validUntil)}</td>
                     <td className="px-4 py-3"><Badge variant="info" className="text-xs capitalize">{c.applicableFor}</Badge></td>
                     <td className="px-4 py-3"><Badge variant={variant} className="text-xs">{label}</Badge></td>
                     <td className="px-4 py-3">

@@ -8,6 +8,7 @@ import Loader from '@/components/ui/Loader';
 import Modal from '@/components/ui/Modal';
 import toast from 'react-hot-toast';
 import { MAX_SHIPMENTS_PER_INCENTIVE_APPLICATION } from '@/lib/incentiveUtils';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 const TABS = [
   { key: 'available', label: 'Available for Incentive Application', icon: '📋' },
@@ -69,12 +70,12 @@ function AvailableTab({ shipments, selected, isSelectable, toggleSelect, onProce
                     <div className="flex-1 min-w-0 grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
                       <div className="min-w-0">
                         <p className="font-semibold text-gray-900 dark:text-white truncate">{s.shipmentNo}</p>
-                        <p className="text-xs text-gray-400">{s.date ? new Date(s.date).toLocaleDateString() : ''}</p>
+                        <p className="text-xs text-gray-400">{s.date ? formatDate(s.date) : ''}</p>
                       </div>
                       <div className="min-w-0"><p className="text-xs text-gray-400">Company</p><p className="font-medium truncate">{s.buyer?.name || '—'}</p></div>
                       <div className="min-w-0"><p className="text-xs text-gray-400">Category</p><p className="font-medium truncate">{s.exportCategory?.name || '—'}</p></div>
                       <div className="min-w-0"><p className="text-xs text-gray-400">License</p><p className="font-medium truncate">{s.exportLicense?.licenseName || '—'}</p></div>
-                      <div className="min-w-0"><p className="text-xs text-gray-400">Order Value</p><p className="font-medium truncate">{s.baseCurrency} {(s.orderValueForeign || 0).toLocaleString()}</p></div>
+                      <div className="min-w-0"><p className="text-xs text-gray-400">Order Value</p><p className="font-medium truncate">{s.baseCurrency} {formatMoney2(s.orderValueForeign)}</p></div>
                     </div>
                   </div>
                 );

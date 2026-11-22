@@ -6,8 +6,8 @@ import { ArrowLeft, Plus, FileText, Package, Tag, Trash2, FileSignature, Pencil 
 import Button from '@/components/ui/Button';
 import Loader from '@/components/ui/Loader';
 import Badge from '@/components/ui/Badge';
-import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 // Batch 9 (R18): this is the old buyers/[buyerId]/page.jsx's shipment-list view, moved one level
 // deeper under a specific Export Contract (country → buyer → Export Contract → shipments). The
@@ -97,8 +97,8 @@ export default function ContractShipmentsPage() {
           </div>
           <p className="text-sm text-gray-500">
             {buyer?.name}
-            {!isUnassignedView && contract?.date && ` · ${format(new Date(contract.date), 'dd MMM yyyy')}`}
-            {!isUnassignedView && contract?.value ? ` · ${contract.baseCurrency} ${contract.value.toLocaleString()}` : ''}
+            {!isUnassignedView && contract?.date && ` · ${formatDate(contract.date)}`}
+            {!isUnassignedView && contract?.value ? ` · ${contract.baseCurrency} ${formatMoney2(contract.value)}` : ''}
             {' '}· {shipments.length} shipment{shipments.length !== 1 ? 's' : ''}
           </p>
         </div>
@@ -164,13 +164,13 @@ export default function ContractShipmentsPage() {
                     {s.exportCategory?.name && <span className="text-xs font-medium text-purple-600 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-lg">{s.exportCategory.name}</span>}
                   </div>
                   <p className="text-sm text-gray-500 mt-0.5">
-                    {s.date ? format(new Date(s.date), 'dd MMM yyyy') : '—'} · {s.finalDestination || s.country?.name}
+                    {s.date ? formatDate(s.date) : '—'} · {s.finalDestination || s.country?.name}
                   </p>
                   <div className="flex gap-4 mt-1 text-xs text-gray-400 flex-wrap">
                     {s.totalNetWeightKg && <span>Net: {s.totalNetWeightKg} kg</span>}
                     {s.totalGrossWeightKg && <span>Gross: {s.totalGrossWeightKg} kg</span>}
                     {s.totalCTN && <span>CTN: {s.totalCTN}</span>}
-                    {s.orderValueForeign && <span className="text-green-600 font-semibold">{s.orderCurrency || 'EUR'} {s.orderValueForeign?.toLocaleString()}</span>}
+                    {s.orderValueForeign && <span className="text-green-600 font-semibold">{s.orderCurrency || 'EUR'} {formatMoney2(s.orderValueForeign)}</span>}
                   </div>
                 </div>
               </div>

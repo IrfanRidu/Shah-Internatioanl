@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import Button from '@/components/ui/Button';
 import { Lock } from 'lucide-react';
+import { formatMoney2 } from '@/lib/utils';
 
 export default function StripePaymentForm({ orderId, onSuccess, amount }) {
   const stripe = useStripe();
@@ -40,7 +41,7 @@ export default function StripePaymentForm({ orderId, onSuccess, amount }) {
       </div>
       {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">{error}</div>}
       <Button type="submit" variant="primary" className="w-full" size="lg" loading={loading || !stripe}>
-        <Lock className="w-4 h-4" /> Pay ৳{amount?.toLocaleString()}
+        <Lock className="w-4 h-4" /> Pay ৳{formatMoney2(amount)}
       </Button>
       <p className="text-center text-xs text-gray-400 flex items-center justify-center gap-1">
         <Lock className="w-3 h-3" /> Secured by Stripe · 256-bit SSL encryption

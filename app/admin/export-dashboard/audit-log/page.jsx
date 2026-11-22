@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
 import { buildFieldDiff } from '@/lib/auditDiff';
+import { formatDate } from '@/lib/utils';
 
 // Issue 45: every add/edit/delete anywhere in the export dashboard is recorded, and every deletion
 // is recoverable. This page has two tabs: a chronological Activity Log, and a Recycle Bin from which
@@ -139,7 +140,7 @@ export default function ExportAuditLogPage() {
                     <span className="font-semibold">{meta.label}</span> {log.entityType} <span className="font-semibold">"{log.entityLabel}"</span>
                   </p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {log.performedByName || log.performedByEmail || 'Unknown admin'} · {new Date(log.createdAt).toLocaleString()}
+                    {log.performedByName || log.performedByEmail || 'Unknown admin'} · {formatDate(log.createdAt)}, {new Date(log.createdAt).toLocaleTimeString()}
                   </p>
                   {(log.before || log.after) && (
                     <button onClick={() => setExpanded(expanded === log._id ? null : log._id)} className="text-xs text-brand hover:underline mt-1">
@@ -162,7 +163,7 @@ export default function ExportAuditLogPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-800 dark:text-gray-200 font-semibold">{item.entityLabel} <span className="text-xs font-normal text-gray-400">({item.entityType})</span></p>
-                <p className="text-xs text-gray-400 mt-0.5">Deleted by {item.deletedByName || 'Unknown admin'} · {new Date(item.createdAt).toLocaleString()}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Deleted by {item.deletedByName || 'Unknown admin'} · {formatDate(item.createdAt)}, {new Date(item.createdAt).toLocaleTimeString()}</p>
               </div>
               <button onClick={() => restore(item)} disabled={restoringId === item._id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand/10 text-brand text-xs font-semibold hover:bg-brand/20 transition-colors disabled:opacity-50">
                 <RotateCcw className="w-3.5 h-3.5" /> Restore

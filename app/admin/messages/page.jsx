@@ -6,6 +6,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import Badge from '@/components/ui/Badge';
 import { MessageSquare, ChevronRight, Phone, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 
 export default function AdminMessagesPage() {
   const [conversations, setConversations] = useState([]);
@@ -71,7 +72,7 @@ export default function AdminMessagesPage() {
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
-                  <p className="text-xs text-gray-400">{format(new Date(c.lastMessageAt), 'dd MMM, hh:mm a')}</p>
+                  <p className="text-xs text-gray-400">{formatDate(c.lastMessageAt)}, {format(new Date(c.lastMessageAt), 'hh:mm a')}</p>
                   {c.user?.phone && (
                     <a href={`tel:${c.user.phone}`} onClick={e => e.stopPropagation()} className="p-1.5 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-600 hover:bg-green-200 transition-colors">
                       <Phone className="w-3.5 h-3.5" />

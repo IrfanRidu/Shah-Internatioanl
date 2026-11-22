@@ -7,7 +7,7 @@ import Link from 'next/link';
 import StarRating from '@/components/product/StarRating';
 import SeasonLabel from '@/components/product/SeasonLabel';
 import { X, CheckCircle, XCircle } from 'lucide-react';
-import { getMoqForBuyer } from '@/lib/utils';
+import { getMoqForBuyer, formatMoney2 } from '@/lib/utils';
 
 export default function ComparePage() {
   const { items, removeFromCompare } = useCompareStore();
@@ -27,7 +27,7 @@ export default function ComparePage() {
   const ATTRS = [
     { label: 'Category', key: p => p.category?.name || '—' },
     { label: 'Price (Local)', key: p => isLocal ? format(p.discountPrice || p.price || 0) : 'N/A' },
-    { label: 'Import Price Range', key: p => !isLocal ? `$${p.priceRangeMin}–$${p.priceRangeMax}` : 'N/A' },
+    { label: 'Import Price Range', key: p => !isLocal ? `$${formatMoney2(p.priceRangeMin)}–$${formatMoney2(p.priceRangeMax)}` : 'N/A' },
     { label: 'Unit', key: p => p.unit || '—' },
     { label: 'Min. Order', key: p => `${getMoqForBuyer(p, buyerType)} ${p.unit}` },
     { label: 'Season', key: p => p.harvestingSeason || '—' },

@@ -8,6 +8,7 @@ import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
 import { resizeImageFile } from '@/lib/clientImageResize';
 import { AVAILABLE_COLUMNS, COLUMN_LABELS, DEFAULT_DOCUMENT_COLUMNS, DOC_KEYS, DOC_LABELS } from '@/lib/exportColumns';
+import { formatMoney2 } from '@/lib/utils';
 
 const EMPTY = {
   name: '', image: '', hsCode: '', incentivePercentage: '', taxPercentage: '', incentiveApplicationCost: '', othersCost: '',
@@ -146,8 +147,8 @@ export default function ExportCategorySection({ currency }) {
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-xs text-gray-500">
                   <span>Incentive: {c.incentivePercentage}%</span>
                   <span>Tax: {c.taxPercentage}%</span>
-                  <span>App. Cost: {currency} {c.incentiveApplicationCost}</span>
-                  <span>Other: {currency} {c.othersCost}</span>
+                  <span>App. Cost: {currency} {formatMoney2(c.incentiveApplicationCost)}</span>
+                  <span>Other: {currency} {formatMoney2(c.othersCost)}</span>
                 </div>
               </div>
             </div>

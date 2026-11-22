@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { ArrowLeft, Search, Archive, Download, Package, ReceiptText, Globe, Paperclip, Trash2, Pencil } from 'lucide-react';
 import Loader from '@/components/ui/Loader';
 import Pagination from '@/components/ui/Pagination';
-import { format } from 'date-fns';
 import { generateShipmentDocPDF, generateAllDocumentsPDF, docTypeLabel, isMergeableAttachment } from '@/lib/exportDocuments';
+import { formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 // Issue 38: "only files ... in pdf format" — an uploaded Additional Document only belongs in the
@@ -285,7 +285,7 @@ export default function ExportArchivePage() {
                         <Pencil className="w-3 h-3" />
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500">{s.buyer?.name || '—'} · {s.country?.flag || '🌍'} {s.country?.name || '—'} · {s.date ? format(new Date(s.date), 'dd MMM yyyy') : '—'}</p>
+                    <p className="text-xs text-gray-500">{s.buyer?.name || '—'} · {s.country?.flag || '🌍'} {s.country?.name || '—'} · {s.date ? formatDate(s.date) : '—'}</p>
                     {/* R13: shipments completed via a claimed Incentive Application land here
                         automatically — link straight back to it for context. */}
                     {s.incentiveApplication?.status === 'claimed' && (

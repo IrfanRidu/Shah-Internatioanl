@@ -11,6 +11,7 @@ import Modal from '@/components/ui/Modal';
 import toast from 'react-hot-toast';
 import { resizeImageFile } from '@/lib/clientImageResize';
 import { calculateIncentiveCosting, resolveEffectiveRateBDT } from '@/lib/incentiveUtils';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 import {
   DEFAULT_KA_FORM_TEXT, resolveKaFormText, generateKaFormPDF, downloadKaFormPDF, downloadKaFormDOCX, generateKaFormXLSX,
   resolveStampApplicationText, assembleStampApplicationText, generateStampApplicationPDF, downloadStampApplicationPDF, downloadStampApplicationDOCX, generateStampApplicationXLSX,
@@ -23,7 +24,8 @@ import {
 // deliberately styled to look like the authentic government form rather than match this app's own
 // UI conventions. Keeping the two visually distinct is intentional, not an inconsistency.
 const money = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
+// DD/MM/YY site-wide display format (lib/utils.js), with this page's own '—' empty-value fallback.
+const fmtDate = (d) => (d ? formatDate(d) : '—');
 // Section E/Stamp Application's "latest TT entry" per shipment (R19: "Date of Repatriation").
 const latestTT = (ttEntries) => (ttEntries || []).reduce((latest, tt) => (!latest || new Date(tt.ttDate) > new Date(latest.ttDate) ? tt : latest), null);
 
@@ -65,12 +67,12 @@ function ShipmentMiniCard({ s }) {
         <p className="font-semibold text-sm text-gray-900 dark:text-white truncate">{s.shipmentNo}</p>
         <Badge variant={s.status === 'completed' ? 'success' : 'info'}>{s.status}</Badge>
       </div>
-      <p className="text-xs text-gray-400 mb-2 truncate">{s.date ? new Date(s.date).toLocaleDateString() : ''} · {s.country?.flag} {s.country?.name}</p>
+      <p className="text-xs text-gray-400 mb-2 truncate">{formatDate(s.date)} · {s.country?.flag} {s.country?.name}</p>
       <p className="text-xs text-gray-500 truncate mb-2">{s.buyer?.name}</p>
       <div className="grid grid-cols-2 gap-1 text-xs text-gray-500">
         <span>Net: {s.totalNetWeightKg || 0} kg</span>
         <span>CTN: {s.totalCTN || 0}</span>
-        <span className="col-span-2 font-semibold text-gray-700 dark:text-gray-300 truncate">{s.baseCurrency} {(s.orderValueForeign || 0).toLocaleString()}</span>
+        <span className="col-span-2 font-semibold text-gray-700 dark:text-gray-300 truncate">{s.baseCurrency} {formatMoney2(s.orderValueForeign)}</span>
       </div>
     </Link>
   );

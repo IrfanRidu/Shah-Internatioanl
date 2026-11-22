@@ -1476,7 +1476,74 @@ width distributed by relative content length) before trusting its results. After
 fit with 37mm to spare on the same A3 portrait page Bengali also uses, in the same comfortable range
 R34 achieved; Bengali's own numbers were re-checked after every edit this round and never moved.
 
-## 31. Setup Reminder
+## 31. Batch 23 — Site-wide DD/MM/YY Dates, 2-Decimal Currency, Bangla Name Column, BD/Buyer Price Summary (R36)
+
+Four-part client request, delivered via the claude.ai Project "SI": (1) every date on the site in
+DD/MM/YY; (2) every currency amount in 2-decimal format (`0.00`); (3) a "Bangla Name" column added to
+Packing List, Buyer's Invoice, and BD Invoice (client's reference PDF showed a "Bangla Name (বাংলা
+নাম)" column); (4) a Shipment Details page with 2 separate price summary rows — BD Price and Buyer's
+Price — allowed to differ from each other, but each one internally consistent with its own printed
+document's total (BD total = BD Invoice total; Buyer's total = Buyer's Invoice total).
+
+**Shared infrastructure (new this round).** `lib/utils.js` gained `formatDate` (date-fns `'dd/MM/yy'`,
+empty-safe), `formatMoney2` (`toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`),
+plus `formatBDT`/`formatUSD`/`formatCurrency` wrappers — the single source every page/component/doc
+generator below was converted to use, so the whole site now agrees on one date and one currency
+format rather than each page rolling its own.
+
+**Bangla Name (item 3) and BD/Buyer Price (item 4)** landed first and turned out to be the more
+contained changes: `lib/exportDocuments.js` (the real PDF/DOCX/XLSX generator — single source of
+truth for Download and the Archive's generated files) and the `/print` preview page both already
+render a conditional "Bangla Name" column (`item.localName`) on Packing List, Buyer's Invoice, and
+BD Invoice's Product-HS-Code mode, gated by the same presence rule botanical name already used — one
+shared flag, so it can never drift between the 3 documents or between print vs. download. The
+Shipment Details page got a new "Price Summary" card with the 2 independent totals side by side,
+each wired directly to the exact same number its own document prints (not a separately-computed
+guess), with an explicit note that the two are allowed to differ — no mismatch warning for that pair
+specifically, matching the client's instruction.
+
+**Dates/currency (items 1-2) was the wide, mechanical part** — every admin list/detail page, the
+export dashboard's full country→buyer→contract→shipment hierarchy, customer-facing order history/
+messages/reviews, email templates, the regular order-invoice PDF, the audit log's before/after diff
+viewer, and every CSV/XLSX/PDF/DOCX export route, swept file by file and converted to `formatDate`/
+`formatMoney2`. ~45 files touched in total across every sweep pass. A final whole-codebase grep pass
+(pattern search for `toLocaleDateString`, bare `toLocaleString()` on money-shaped fields, date-fns
+`format(..., 'dd MMM...')`, and currency-symbol/currency-code-prefixed raw interpolations) turned up
+a handful of stragglers beyond the originally-tracked file list, all fixed: `app/(shop)/messages/
+page.jsx` (an incomplete partial edit — the `formatDate` import had been added but never actually
+used), `ExportCategorySection.jsx` and `CtnConfigSection.jsx` (export-settings cost fields),
+`products/compare/page.jsx` (Import Price Range), and `lib/auditDiff.js`'s TT-entries total (money,
+unlike the generic diff-value formatter next to it, which mixes currency and non-currency fields and
+was deliberately left alone).
+
+**Deliberate exemptions (not bugs — left as-is on purpose):**
+- `lib/kaFormDocuments.js` (Ka Form / Stamp Application, batches 9-22 above) keeps its own dotted,
+  4-digit-year, Bengali-digit date formatting and its own pre-existing 2-decimal money formatting —
+  that file byte-matches real government/bank reference documents; converting it to the generic
+  site format would break that compliance match. Not part of this request's scope.
+- Native `<input type="date">` values stay ISO `yyyy-MM-dd` everywhere (required by the HTML date
+  picker) — only the read-only *display* of a date was ever a DD/MM/YY candidate.
+- Chart-axis tick labels, percentage figures, and month-name/month-bucket grouping labels (e.g.
+  Recharts tooltips' `k`-suffixed abbreviations, a Pie slice's `%`, a trend chart's "Jan '26") are
+  categorical/abbreviated, not a date or currency *display*, and were left alone.
+- `app/api/admin/orders/export/route.js`'s XLSX/CSV numeric currency columns (Subtotal, Delivery,
+  Total, etc.) were deliberately left as native numbers rather than forced into 2-decimal text —
+  this is a raw data export an admin opens in Excel to sum/sort/pivot, and turning every cell into a
+  formatted string would quietly break that. Dates in the same export were still converted (already
+  text, no functional loss). `app/api/admin/customers/export/route.js` has no currency columns, so
+  this didn't apply there.
+- `lib/exportDocuments.js` and the `/print` page use `Number(x).toFixed(2)` rather than importing
+  `formatMoney2` for item-table figures — same 2-decimal result, no thousands separator. This was
+  already the established, consistent convention across both of those files before this round and
+  satisfies the "0.00" format the client asked for; left unchanged rather than introduced as a new
+  inconsistency this late.
+
+**Verification.** No `node_modules` in this environment (network installs are off), so nothing here
+could be build- or runtime-tested — every file touched was checked with `tsc --noEmit --allowJs
+--jsx preserve --noResolve` (syntax-only, no import resolution) immediately after editing, and the
+full set was re-verified together in one batch at the end of this round. All clean.
+
+## 32. Setup Reminder
 
 ```bash
 npm install

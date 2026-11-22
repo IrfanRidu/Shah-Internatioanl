@@ -6,6 +6,7 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { ArrowLeft, Send, Phone, Mail, Globe, Building2, CheckCircle, XCircle, Paperclip, X, FileText, Download, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { uploadAttachmentDirect, validateAttachment } from '@/lib/clientDirectUpload';
 
@@ -152,7 +153,7 @@ export default function AdminConversationPage() {
                       </div>
                     )}
                     {m.attachments?.map((a, i) => <AttachmentView key={i} a={a} />)}
-                    <p className={`text-xs text-gray-400 mt-1 ${isAdmin ? 'text-right mr-1' : 'ml-1'}`}>{format(new Date(m.createdAt), 'dd MMM, hh:mm a')}</p>
+                    <p className={`text-xs text-gray-400 mt-1 ${isAdmin ? 'text-right mr-1' : 'ml-1'}`}>{formatDate(m.createdAt)}, {format(new Date(m.createdAt), 'hh:mm a')}</p>
                   </div>
                 </div>
               );

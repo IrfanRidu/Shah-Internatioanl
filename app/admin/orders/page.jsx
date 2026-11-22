@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { Phone, MessageSquare, RefreshCw, Eye, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useOrderStream } from '@/hooks/useOrderStream';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 // Status flow: processing → any status (admin can jump directly)
 const STATUS_OPTIONS = ['all', 'processing', 'confirmed', 'cancelled', 'onTheWay', 'delivered', 'returned'];
@@ -126,12 +127,12 @@ export default function AdminOrdersPage() {
                   </div>
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">{order.user?.name}</span>
-                    <span className="text-xs text-gray-400">{format(new Date(order.createdAt), 'dd MMM yyyy, hh:mm a')}</span>
+                    <span className="text-xs text-gray-400">{formatDate(order.createdAt)}, {format(new Date(order.createdAt), 'hh:mm a')}</span>
                     <span className="text-xs text-gray-400">{order.items?.length} item{order.items?.length !== 1 ? 's' : ''}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="font-bold text-brand text-lg">৳{order.total?.toLocaleString()}</span>
+                  <span className="font-bold text-brand text-lg">৳{formatMoney2(order.total)}</span>
                   {order.user?.phone && (
                     <a href={`tel:${order.user.phone}`} onClick={e => e.stopPropagation()} className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-600 hover:bg-green-200 transition-colors" title={`Call ${order.user.name}`}>
                       <Phone className="w-4 h-4" />
@@ -167,7 +168,7 @@ export default function AdminOrdersPage() {
                       {order.items?.map((item, i) => (
                         <div key={i} className="flex justify-between text-sm text-gray-600 dark:text-gray-300">
                           <span className="truncate mr-2">{item.name} ×{item.quantity}</span>
-                          <span className="flex-shrink-0">৳{(item.price * item.quantity).toLocaleString()}</span>
+                          <span className="flex-shrink-0">৳{formatMoney2(item.price * item.quantity)}</span>
                         </div>
                       ))}
                     </div>

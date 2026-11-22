@@ -5,7 +5,7 @@ import StarRating from './StarRating';
 import Button from '@/components/ui/Button';
 import Pagination from '@/components/ui/Pagination';
 import { CheckCircle, MessageSquare, ThumbsUp, Shield } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 export default function ReviewSection({ productId }) {
@@ -145,7 +145,7 @@ export default function ReviewSection({ productId }) {
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <StarRating rating={review.rating} size="sm" />
-                      <span className="text-xs text-gray-400">{format(new Date(review.createdAt), 'dd MMM yyyy')}</span>
+                      <span className="text-xs text-gray-400">{formatDate(review.createdAt)}</span>
                     </div>
                   </div>
                 </div>

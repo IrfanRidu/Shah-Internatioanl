@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun, HeadingLevel, WidthType, AlignmentType } from 'docx';
+import { formatDate } from '@/lib/utils';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and
 // must never be statically cached/prerendered (prevents both stale data and the
@@ -35,7 +36,9 @@ export async function GET(request) {
     }
 
     const headers = ['Name', 'Email', 'Phone', 'Buyer Type', 'Country', 'Company', 'Registered'];
-    const rows = users.map(u => [u.name, u.email, u.phone || '—', u.buyerType === 'local' ? 'Local' : 'International', u.country || '—', u.company || '—', new Date(u.createdAt).toLocaleDateString('en-GB')]);
+    const rows = users.map(u => [u.name, u.email, u.phone || '—', u.buyerType === 'local' ? 'Local' : 'International', u.country || '—', u.company || '—', formatDate(u.createdAt)]);
+    // Single shared timestamp for the "Generated ..." footer/byline below, reused across the PDF and DOCX outputs.
+    const generatedAt = new Date();
 
     // ---------- CSV ----------
     if (format === 'csv') {
@@ -63,7 +66,7 @@ export async function GET(request) {
       doc.setFontSize(16); doc.setFont('helvetica', 'bold');
       doc.text('Shah International — Customer List', 14, 14);
       doc.setFontSize(9); doc.setFont('helvetica', 'normal');
-      doc.text(`Generated ${new Date().toLocaleString('en-GB')}  ·  ${users.length} customers`, W - 14, 14, { align: 'right' });
+      doc.text(`Generated ${formatDate(generatedAt)}, ${generatedAt.toLocaleTimeString('en-GB')}  ·  ${users.length} customers`, W - 14, 14, { align: 'right' });
 
       autoTable(doc, {
         startY: 28,
@@ -102,7 +105,7 @@ export async function GET(request) {
           children: [
             new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'Shah International', bold: true, color: '2D6A4F', size: 32 })] }),
             new Paragraph({ children: [new TextRun({ text: 'Customer List', bold: true, size: 26 })], spacing: { after: 100 } }),
-            new Paragraph({ children: [new TextRun({ text: `Generated ${new Date().toLocaleString('en-GB')} · ${users.length} customers`, italics: true, size: 18, color: '6B7280' })], spacing: { after: 300 } }),
+            new Paragraph({ children: [new TextRun({ text: `Generated ${formatDate(generatedAt)}, ${generatedAt.toLocaleTimeString('en-GB')} · ${users.length} customers`, italics: true, size: 18, color: '6B7280' })], spacing: { after: 300 } }),
             new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerRow, ...dataRows] }),
           ],
         }],

@@ -8,6 +8,7 @@ import Loader from '@/components/ui/Loader';
 import { Plus, Edit2, Trash2, Zap, Search, Check, Calendar, Clock, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 // ─── DateTimePicker with explicit OK confirmation button ───────────────────
 // Issue 2 (R26): reads/writes real, timezone-aware Date values now — was building a plain
@@ -29,6 +30,17 @@ function toLocalDateStr(d) {
 }
 function toLocalTimeStr(d) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+// ymd is a 'YYYY-MM-DD' string (from toLocalDateStr or a native date input) — reformatted directly
+// from its own string components to the site-wide DD/MM/YY display format, without round-tripping
+// through a Date object. Re-parsing a date-only string with `new Date()` reads it as UTC midnight,
+// which is exactly the class of timezone bug this file's DateTimePicker was already rewritten once
+// to avoid (see the comment above) — so this stays a plain string reformat instead of calling the
+// shared formatDate() helper (which does parse through `new Date()`, fine for real timestamps but
+// not for a bare y/m/d triple like this one).
+function toDisplayDateStr(ymd) {
+  const [y, m, d] = ymd.split('-');
+  return `${d}/${m}/${y.slice(2)}`;
 }
 function DateTimePicker({ label, value, onChange }) {
   const initial = value ? new Date(value) : null;
@@ -72,7 +84,7 @@ function DateTimePicker({ label, value, onChange }) {
           className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all ${confirmed ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'text-white hover:opacity-90'}`}
           style={confirmed ? {} : { backgroundColor: 'var(--color-primary)' }}>
           <Check className="w-4 h-4" />
-          {confirmed ? `✓ ${date} at ${time}` : 'OK — Confirm Date & Time'}
+          {confirmed ? `✓ ${toDisplayDateStr(date)} at ${time}` : 'OK — Confirm Date & Time'}
         </button>
       </div>
     </div>
@@ -210,7 +222,10 @@ export default function AdminCampaignsPage() {
                       <Badge variant="default" className="text-xs">{c.targetAudience}</Badge>
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {c.startTime ? format(new Date(c.startTime), 'dd MMM yyyy HH:mm') : '—'} → {c.endTime ? format(new Date(c.endTime), 'dd MMM yyyy HH:mm') : '—'}
+                      {/* Real stored timestamps (not bare y/m/d strings), so routing through formatDate()
+                          here is safe — see this file's own DateTimePicker comments above for why that's
+                          NOT true for the date-only values handled there. */}
+                      {c.startTime ? `${formatDate(c.startTime)} ${format(new Date(c.startTime), 'HH:mm')}` : '—'} → {c.endTime ? `${formatDate(c.endTime)} ${format(new Date(c.endTime), 'HH:mm')}` : '—'}
                     </p>
                     <p className="text-xs text-gray-400">{c.items?.length || 0} products selected</p>
                   </div>
@@ -293,7 +308,7 @@ export default function AdminCampaignsPage() {
                 {filteredProds.slice(0, 20).map(p => (
                   <button key={p._id} onClick={() => addItem(p)} className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center justify-between text-gray-700 dark:text-gray-300 transition-colors">
                     <span className="truncate">{p.name}</span>
-                    <span className="text-xs text-gray-400 ml-2 flex-shrink-0">৳{p.price}</span>
+                    <span className="text-xs text-gray-400 ml-2 flex-shrink-0">৳{formatMoney2(p.price)}</span>
                   </button>
                 ))}
                 {filteredProds.length === 0 && <p className="text-center text-gray-400 text-sm py-4">No products found</p>}

@@ -53,7 +53,7 @@ export default function AdminAnalyticsPage() {
 
   const exportExcel = () => window.open(`/api/admin/orders/export?format=xlsx&from=${dateRange.from}&to=${dateRange.to}`, '_blank');
 
-  const fmt = n => `৳${(n || 0).toLocaleString()}`;
+  const fmt = n => `৳${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const statusData = metrics?.statusBreakdown?.map((s, i) => ({ name: s._id, value: s.count, fill: COLORS[i % COLORS.length] })) || [];
 
   return (
@@ -92,7 +92,7 @@ export default function AdminAnalyticsPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="_id" tick={{ fontSize: 10 }} tickFormatter={v => v?.slice(5)} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={v => [`৳${Number(v).toLocaleString()}`, 'Revenue']} />
+                  <Tooltip formatter={v => [`৳${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Revenue']} />
                   <Area type="monotone" dataKey="revenue" stroke="#2d6a4f" fill="url(#rg)" strokeWidth={2.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>

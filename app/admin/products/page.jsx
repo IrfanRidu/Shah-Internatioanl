@@ -10,6 +10,7 @@ import Pagination from '@/components/ui/Pagination';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Plus, Search, Edit2, Eye, ToggleLeft, ToggleRight, Trash2, Leaf, CheckSquare, Square, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { formatMoney2 } from '@/lib/utils';
 
 // Next.js requires useSearchParams() (used below, for issue 6's URL-synced page/search/category) to
 // sit under a Suspense boundary — without it, this page loses server rendering and falls back to a
@@ -181,8 +182,8 @@ function AdminProductsPageInner() {
                     <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{p.name}</p>
                     <p className="text-xs text-gray-400 truncate">{p.category?.name || '—'}</p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span className="font-semibold text-gray-800 dark:text-gray-200 text-sm">৳{p.price?.toLocaleString() || '—'}</span>
-                      {p.discountPrice && <span className="text-xs text-green-600">Sale: ৳{p.discountPrice?.toLocaleString()}</span>}
+                      <span className="font-semibold text-gray-800 dark:text-gray-200 text-sm">৳{p.price != null ? formatMoney2(p.price) : '—'}</span>
+                      {p.discountPrice && <span className="text-xs text-green-600">Sale: ৳{formatMoney2(p.discountPrice)}</span>}
                     </div>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       {p.isHarvestingSeason
@@ -264,12 +265,12 @@ function AdminProductsPageInner() {
                       <td className="px-4 py-3 text-gray-500 text-xs">{p.category?.name || '—'}</td>
                       <td className="px-4 py-3">
                         <div>
-                          <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">৳{p.price?.toLocaleString() || '—'}</p>
-                          {p.discountPrice && <p className="text-xs text-green-600">Sale: ৳{p.discountPrice?.toLocaleString()}</p>}
+                          <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">৳{p.price != null ? formatMoney2(p.price) : '—'}</p>
+                          {p.discountPrice && <p className="text-xs text-green-600">Sale: ৳{formatMoney2(p.discountPrice)}</p>}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{p.priceRangeMin ? `$${p.priceRangeMin}–$${p.priceRangeMax}` : '—'}</td>
-                      <td className="px-4 py-3 text-xs text-amber-600 font-medium">{p.productCost ? `৳${p.productCost}` : '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{p.priceRangeMin ? `$${formatMoney2(p.priceRangeMin)}–$${formatMoney2(p.priceRangeMax)}` : '—'}</td>
+                      <td className="px-4 py-3 text-xs text-amber-600 font-medium">{p.productCost ? `৳${formatMoney2(p.productCost)}` : '—'}</td>
                       <td className="px-4 py-3">
                         {p.isHarvestingSeason
                           ? <span className="text-xs text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-lg">🌿 Season</span>

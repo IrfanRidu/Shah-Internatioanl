@@ -4,7 +4,7 @@ import Badge from '@/components/ui/Badge';
 import Loader from '@/components/ui/Loader';
 import Pagination from '@/components/ui/Pagination';
 import { Search, Download, Phone, Mail, Filter, ChevronDown, FileText, FileSpreadsheet, FileType } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 
 export default function AdminCustomersPage() {
   const [users, setUsers] = useState([]);
@@ -110,7 +110,7 @@ export default function AdminCustomersPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{u.phone || '—'}</td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs">{u.company || u.country || '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{format(new Date(u.createdAt), 'dd MMM yyyy')}</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(u.createdAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           {u.phone && <a href={`tel:${u.phone}`} className="p-1.5 rounded-lg text-gray-400 hover:text-green-500 hover:bg-green-50 transition-all" title="Call"><Phone className="w-4 h-4" /></a>}

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Bell, X, Package, AlertTriangle, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 import { useOrderStream } from '@/hooks/useOrderStream';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -45,7 +46,7 @@ export default function NotificationBell() {
       ]);
       const [orders, inventory, messagesData] = await Promise.all([ordersRes.json(), inventoryRes.json(), messagesRes.json()]);
       const notifs = [
-        ...((orders.orders || []).map(o => ({ id: o._id, type: 'order', icon: Package, color: 'text-blue-500 bg-blue-50', title: `New Order #${o.orderNumber}`, desc: `৳${o.total?.toLocaleString()} · ${o.user?.name}`, time: o.createdAt, href: '/admin/orders' }))),
+        ...((orders.orders || []).map(o => ({ id: o._id, type: 'order', icon: Package, color: 'text-blue-500 bg-blue-50', title: `New Order #${o.orderNumber}`, desc: `৳${formatMoney2(o.total)} · ${o.user?.name}`, time: o.createdAt, href: '/admin/orders' }))),
         ...((messagesData.conversations || []).filter(c => c.unreadByAdmin).slice(0, 5).map(c => ({ id: c._id, type: 'message', icon: MessageSquare, color: 'text-purple-500 bg-purple-50', title: `New message: ${c.subject}`, desc: `${c.user?.name} · ${c.lastMessage?.slice(0, 40)}`, time: c.lastMessageAt, href: `/admin/messages/${c._id}` }))),
         ...((inventory.inventory || []).filter(i => i.currentStock <= i.minimumStockAlert).slice(0, 3).map(i => ({ id: i._id, type: 'stock', icon: AlertTriangle, color: 'text-amber-500 bg-amber-50', title: 'Low Stock Alert', desc: `${i.product?.name}: ${i.currentStock} left`, href: '/admin/inventory' }))),
       ];
@@ -123,7 +124,7 @@ export default function NotificationBell() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-800 dark:text-white">{n.title}</p>
                   <p className="text-xs text-gray-500 truncate">{n.desc}</p>
-                  {n.time && <p className="text-xs text-gray-400 mt-0.5">{format(new Date(n.time), 'dd MMM, hh:mm a')}</p>}
+                  {n.time && <p className="text-xs text-gray-400 mt-0.5">{formatDate(n.time)}, {format(new Date(n.time), 'hh:mm a')}</p>}
                 </div>
               </Link>
             ))}

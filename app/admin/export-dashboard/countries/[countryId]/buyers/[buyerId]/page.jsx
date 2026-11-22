@@ -9,6 +9,7 @@ import Input from '@/components/ui/Input';
 import Loader from '@/components/ui/Loader';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 // Batch 9 (R18): this page used to list the buyer's shipments directly. The route is now
 // country → buyer → Export Contract → shipments — this page lists Export Contracts, and shipments
@@ -107,7 +108,7 @@ export default function BuyerContractsPage() {
                 </div>
                 <div className="min-w-0">
                   <p className="font-bold text-gray-900 dark:text-white truncate">{c.contractNo}</p>
-                  <p className="text-xs text-gray-400">{c.date ? format(new Date(c.date), 'dd MMM yyyy') : '—'}</p>
+                  <p className="text-xs text-gray-400">{c.date ? formatDate(c.date) : '—'}</p>
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
@@ -118,7 +119,7 @@ export default function BuyerContractsPage() {
 
             <div className="space-y-1.5 mb-4 text-sm">
               {c.exportCategory?.name && <p className="text-xs font-medium text-purple-600 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-lg inline-block">{c.exportCategory.name}</p>}
-              <p className="text-gray-500">Value: <span className="font-semibold text-gray-700 dark:text-gray-300">{c.baseCurrency} {(c.value || 0).toLocaleString()}</span></p>
+              <p className="text-gray-500">Value: <span className="font-semibold text-gray-700 dark:text-gray-300">{c.baseCurrency} {formatMoney2(c.value)}</span></p>
               <p className="text-xs text-gray-400">Base currency: <span className="font-semibold text-gray-600 dark:text-gray-300">{c.baseCurrency}</span></p>
             </div>
 

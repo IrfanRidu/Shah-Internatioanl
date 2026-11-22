@@ -6,6 +6,7 @@ import Modal from '@/components/ui/Modal';
 import Input from '@/components/ui/Input';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
+import { formatMoney2 } from '@/lib/utils';
 
 const EMPTY = { ctnSizeKg: '', ctnWeightGm: '', ctnCost: '' };
 
@@ -76,7 +77,7 @@ export default function CtnConfigSection({ currency }) {
                 <tr key={c._id}>
                   <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{c.ctnSizeKg} kg</td>
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{c.ctnWeightGm} gm</td>
-                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{currency} {c.ctnCost}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{currency} {formatMoney2(c.ctnCost)}</td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-400 hover:text-green-500 hover:bg-green-50 transition-all"><Edit2 className="w-3.5 h-3.5" /></button>
                     <button onClick={() => handleDelete(c)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"><Trash2 className="w-3.5 h-3.5" /></button>

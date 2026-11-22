@@ -6,6 +6,7 @@ import Badge from '@/components/ui/Badge';
 import Loader from '@/components/ui/Loader';
 import { Package, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 const STATUS_COLORS = { pending: 'warning', confirmed: 'info', processing: 'info', onTheWay: 'primary', delivered: 'success', cancelled: 'danger', returned: 'danger' };
 const STATUS_ICONS = { pending: '⏳', confirmed: '✅', processing: '⚙️', onTheWay: '🚚', delivered: '✔️', cancelled: '❌', returned: '↩️' };
@@ -59,7 +60,7 @@ export default function OrdersPage() {
                     <Badge variant={STATUS_COLORS[order.status] || 'default'}>{STATUS_ICONS[order.status]} {order.status}</Badge>
                     {order.paymentStatus === 'paid' && <Badge variant="success">💳 Paid</Badge>}
                   </div>
-                  <p className="text-sm text-gray-500">{format(new Date(order.createdAt), 'dd MMM yyyy, hh:mm a')}</p>
+                  <p className="text-sm text-gray-500">{formatDate(order.createdAt)}, {format(new Date(order.createdAt), 'hh:mm a')}</p>
                   <div className="mt-2 flex gap-1 flex-wrap">
                     {order.items?.slice(0, 3).map((item, i) => (
                       <span key={i} className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-2 py-0.5 rounded-full">{item.name} ×{item.quantity}</span>
@@ -68,7 +69,7 @@ export default function OrdersPage() {
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="font-bold text-brand text-lg">৳{order.total?.toLocaleString()}</p>
+                  <p className="font-bold text-brand text-lg">৳{formatMoney2(order.total)}</p>
                   <p className="text-xs text-gray-400">{order.items?.length} item{order.items?.length !== 1 ? 's' : ''}</p>
                   <ChevronRight className="w-4 h-4 text-gray-400 ml-auto mt-2" />
                 </div>

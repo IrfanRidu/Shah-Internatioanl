@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Loader from '@/components/ui/Loader';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
+import { formatDate } from '@/lib/utils';
 
 // Issue 46: money is always shown with exactly two decimal places.
 const money = (v) => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -90,7 +91,11 @@ export default function ExportAnalyticsPage() {
 
   const exportXLSX = () => {
     const headers = ['Month', 'Company', 'Date', 'Total Net Weight (kg)', 'Total Gross Weight (kg)', `Freight Cost (${baseCurrency})`, `Goods Cost (${baseCurrency})`, `Export Processing Cost (${baseCurrency})`, `Others Cost/Logistics/Labour (${baseCurrency})`, `Damage (${baseCurrency})`, `Total Cost (${baseCurrency})`, `Order Value`, 'Rate in BDT', `Receive Amount (${baseCurrency})`, `Available Balance (${baseCurrency})`, `Shipment Margin (${baseCurrency})`, `Incentive (${baseCurrency})`, `Net Profit (${baseCurrency})`];
-    const data = rows.map(r => [r.month, r.company, r.date ? new Date(r.date).toLocaleDateString() : '', r.totalNetWeightKg, r.totalGrossWeightKg, r.freightCost, r.goodsCost, r.exportProcessingCost, r.othersCost, r.damage, r.totalCost, `${r.orderValueForeign} ${r.orderCurrency}`, r.exchangeRateBDT, r.receiveAmountBDT, r.availableBalance, r.shipmentMargin, r.incentive, r.netProfit]);
+    // Date and every currency figure here are formatted the same way the on-screen table above
+    // already shows them (DD/MM/YY dates via formatDate; 2-decimal amounts via the same money()
+    // helper used throughout this file, exchangeRateBDT included — Issue 46 already established
+    // that convention for the on-screen version of this exact data).
+    const data = rows.map(r => [r.month, r.company, r.date ? formatDate(r.date) : '', r.totalNetWeightKg, r.totalGrossWeightKg, money(r.freightCost), money(r.goodsCost), money(r.exportProcessingCost), money(r.othersCost), money(r.damage), money(r.totalCost), `${money(r.orderValueForeign)} ${r.orderCurrency}`, money(r.exchangeRateBDT), money(r.receiveAmountBDT), money(r.availableBalance), money(r.shipmentMargin), money(r.incentive), money(r.netProfit)]);
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
     ws['!cols'] = headers.map(() => ({ wch: 22 }));
@@ -229,7 +234,7 @@ export default function ExportAnalyticsPage() {
                     <tr key={row._id || i} className={i % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800/50'}>
                       <td className="px-3 py-2.5 font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">{row.month}</td>
                       <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300 whitespace-nowrap">{row.company}</td>
-                      <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{row.date ? new Date(row.date).toLocaleDateString('en-GB') : '—'}</td>
+                      <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{row.date ? formatDate(row.date) : '—'}</td>
                       <td className="px-3 py-2.5 text-gray-600 dark:text-gray-300 whitespace-nowrap">{money(row.totalNetWeightKg)} kg</td>
                       <td className="px-3 py-2.5 text-gray-600 dark:text-gray-300 whitespace-nowrap">{money(row.totalGrossWeightKg)} kg</td>
                       <td className="px-3 py-2.5 text-gray-600 dark:text-gray-300 whitespace-nowrap">{sym}{money(row.freightCost)}</td>

@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { generateShipmentDocPDF, docTypeLabel, resolveDocumentText } from '@/lib/exportDocuments';
 import { getDocumentColumns, columnHeaderLabel, avgPrice } from '@/lib/exportColumns';
 import { LETTERHEAD_CONTENT_START_MM } from '@/lib/pdfLetterhead';
+import { formatDate } from '@/lib/utils';
 
 // This print container's own top padding (12mm, matching where it's set further down) stacks
 // underneath DocHeader's spacer div (a normal-flow element, unlike its absolutely-positioned image,
@@ -121,7 +122,7 @@ function DocHeader({ letterheadUrl, exporterInfo, plain, onLetterheadLoad }) {
 // R1-R4: the header info block is the same on every document, always auto-filled from the
 // shipment — used by Packing List, Buyer's Invoice, and BD Invoice alike.
 function InfoGrid({ shipment, buyer, exporterInfo }) {
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB') : '');
+  const fmtDate = (d) => formatDate(d); // DD/MM/YY site-wide display format (lib/utils.js)
   // EXP/AWB/PC each carry their own date (expDate/awbDate/pcDate) — rendered as Label | Value |
   // Date within the SAME left-column cell the rest of this grid already uses, a vertical rule
   // between value and date, date right-aligned, matching the reference document precisely. A
@@ -205,6 +206,7 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
           <tr>
             <th style={TH}>SL NO.</th>
             <th style={{ ...TH, textAlign: 'left' }}>Name of Products<br />(Botanical Name)</th>
+            <th style={TH}>Bangla Name</th>
             {columns.map((k) => <th key={k} style={TH}>{columnHeaderLabel(k, shipment.baseCurrency, shipment.salesTerm)}</th>)}
           </tr>
         </thead>
@@ -213,18 +215,19 @@ function PackingListDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, o
             <tr key={i}>
               <td style={TDC}>{i + 1}</td>
               <td style={TD}>{item.productName}{item.botanicalName && <span style={{ fontStyle: 'italic' }}> ({item.botanicalName})</span>}</td>
+              <td style={TDC}>{item.localName || '—'}</td>
               {columns.map((k) => <td key={k} style={TDC}>{renderItemCell(k, item)}</td>)}
             </tr>
           ))}
           <tr style={{ fontWeight: 'bold' }}>
-            <td colSpan={2} style={{ ...TD, textAlign: 'right' }}>Grand Total :</td>
+            <td colSpan={3} style={{ ...TD, textAlign: 'right' }}>Grand Total :</td>
             {columns.map((k) => <td key={k} style={TDC}>{renderGrandCell(k, grand)}</td>)}
           </tr>
         </tbody>
       </table>
 
       <div style={SUMMARY_LINE}>
-        <b>Gross Weight : {shipment.totalGrossWeightKg} KG &nbsp;&nbsp; Freight Cost : {shipment.freightCost} {shipment.baseCurrency}</b>
+        <b>Gross Weight : {shipment.totalGrossWeightKg} KG &nbsp;&nbsp; Freight Cost : {Number(shipment.freightCost || 0).toFixed(2)} {shipment.baseCurrency}</b>
       </div>
 
       <div style={DECLARATION_STYLE}>
@@ -282,6 +285,9 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
             ) : (
               <th style={{ ...TH, textAlign: 'left' }}>Name of Products</th>
             )}
+            {/* Bangla Name follows the identical presence rule as botanical name just above — BD
+                Invoice's category-mode rows are product-category names, so neither applies there. */}
+            {(isBuyer || isBdProductMode) && <th style={TH}>Bangla Name</th>}
             {columns.map((k) => <th key={k} style={TH}>{columnHeaderLabel(k, currency, shipment.salesTerm)}</th>)}
           </tr>
         </thead>
@@ -293,18 +299,19 @@ function InvoiceDoc({ shipment, buyer, letterheadUrl, exporterInfo, plain, type,
                 {item.productName}
                 {(isBuyer || isBdProductMode) && item.botanicalName && <><br /><span style={{ fontStyle: 'italic', fontSize: '8.5px' }}>({item.botanicalName})</span></>}
               </td>
+              {(isBuyer || isBdProductMode) && <td style={TDC}>{item.localName || '—'}</td>}
               {columns.map((k) => <td key={k} style={TDC}>{renderItemCell(k, item)}</td>)}
             </tr>
           ))}
           <tr style={{ fontWeight: 'bold' }}>
-            <td colSpan={2} style={{ ...TD, textAlign: 'right' }}>Grand Total :</td>
+            <td colSpan={(isBuyer || isBdProductMode) ? 3 : 2} style={{ ...TD, textAlign: 'right' }}>Grand Total :</td>
             {columns.map((k) => <td key={k} style={TDC}>{renderGrandCell(k, grand)}</td>)}
           </tr>
         </tbody>
       </table>
 
       <div style={SUMMARY_LINE}>
-        <b>Gross Weight : {shipment.totalGrossWeightKg} KG &nbsp;&nbsp; Freight Cost : {shipment.freightCost} {currency}</b>
+        <b>Gross Weight : {shipment.totalGrossWeightKg} KG &nbsp;&nbsp; Freight Cost : {Number(shipment.freightCost || 0).toFixed(2)} {currency}</b>
       </div>
 
       <div style={DECLARATION_STYLE}>

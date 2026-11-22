@@ -5,7 +5,7 @@ import Loader from '@/components/ui/Loader';
 import StarRating from '@/components/product/StarRating';
 import Button from '@/components/ui/Button';
 import { CheckCircle, XCircle, MessageSquare, RefreshCw, Shield } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
 export default function AdminReviewsPage() {
@@ -95,7 +95,7 @@ export default function AdminReviewsPage() {
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <StarRating rating={review.rating} size="sm" />
-                      <span className="text-xs text-gray-400">{format(new Date(review.createdAt), 'dd MMM yyyy')}</span>
+                      <span className="text-xs text-gray-400">{formatDate(review.createdAt)}</span>
                     </div>
                     {review.product && <p className="text-xs text-gray-400 mt-0.5">Product: {review.product?.name || 'Unknown'}</p>}
                   </div>

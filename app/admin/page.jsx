@@ -8,6 +8,7 @@ import Badge from '@/components/ui/Badge';
 import { format } from 'date-fns';
 import { useOrderStream } from '@/hooks/useOrderStream';
 import toast from 'react-hot-toast';
+import { formatDate, formatMoney2 } from '@/lib/utils';
 
 function MetricCard({ title, value, subtitle, icon: Icon, trend, color = 'green' }) {
   const colors = { green: 'text-green-600 bg-green-100', blue: 'text-blue-600 bg-blue-100', amber: 'text-amber-600 bg-amber-100', red: 'text-red-600 bg-red-100', purple: 'text-purple-600 bg-purple-100' };
@@ -69,7 +70,7 @@ export default function AdminDashboard() {
   // automatically falling back to 30s polling if the database doesn't support them.
   const { live } = useOrderStream({
     onNewOrder: (order) => {
-      toast.success(`🛎️ New order #${order.orderNumber} — ৳${order.total?.toLocaleString()}`);
+      toast.success(`🛎️ New order #${order.orderNumber} — ৳${formatMoney2(order.total)}`);
       fetchData();
     },
     onPoll: fetchData,
@@ -78,7 +79,7 @@ export default function AdminDashboard() {
 
   if (loading) return <div className="py-20"><Loader text="Loading dashboard..." /></div>;
 
-  const fmt = (n) => typeof n === 'number' ? `৳${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '৳0';
+  const fmt = (n) => typeof n === 'number' ? `৳${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '৳0.00';
   const statusData = metrics?.statusBreakdown?.map(s => ({ name: s._id, value: s.count })) || [];
 
   return (
@@ -159,7 +160,7 @@ export default function AdminDashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="_id" tick={{ fontSize: 11 }} tickFormatter={v => v?.slice(5)} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `৳${(v / 1000).toFixed(0)}k`} />
-              <Tooltip formatter={(v) => [`৳${v.toLocaleString()}`, 'Revenue']} />
+              <Tooltip formatter={(v) => [`৳${formatMoney2(v)}`, 'Revenue']} />
               <Area type="monotone" dataKey="revenue" stroke="var(--color-primary)" fill="rgba(45,106,79,0.1)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
@@ -198,10 +199,10 @@ export default function AdminDashboard() {
                     <span className="font-semibold text-gray-800 dark:text-white text-sm">#{order.orderNumber}</span>
                     <Badge variant={{ pending: 'warning', confirmed: 'info', delivered: 'success', cancelled: 'danger', onTheWay: 'primary' }[order.status] || 'default'} className="text-xs">{order.status}</Badge>
                   </div>
-                  <p className="text-xs text-gray-400 truncate">{order.user?.name} • {format(new Date(order.createdAt), 'dd MMM, hh:mm a')}</p>
+                  <p className="text-xs text-gray-400 truncate">{order.user?.name} • {formatDate(order.createdAt)}, {format(new Date(order.createdAt), 'hh:mm a')}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="font-bold text-brand text-sm">৳{order.total?.toLocaleString()}</span>
+                  <span className="font-bold text-brand text-sm">৳{formatMoney2(order.total)}</span>
                   {order.user?.phone && (
                     <a href={`tel:${order.user.phone}`} className="p-1.5 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors" title="Call customer" onClick={e => e.stopPropagation()}>
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
@@ -227,7 +228,7 @@ export default function AdminDashboard() {
                   <p className="text-sm font-medium text-gray-800 dark:text-white truncate">{p.name}</p>
                   <p className="text-xs text-gray-400">{p.sold} units sold</p>
                 </div>
-                <span className="text-sm font-bold text-brand flex-shrink-0">৳{p.revenue?.toLocaleString()}</span>
+                <span className="text-sm font-bold text-brand flex-shrink-0">৳{formatMoney2(p.revenue)}</span>
               </div>
             ))}
             {(!metrics?.topProducts || metrics.topProducts.length === 0) && <p className="text-gray-400 text-sm text-center py-4">No sales data yet</p>}

@@ -8,6 +8,7 @@ import Order from '@/models/Order';
 import User from '@/models/User';
 import * as XLSX from 'xlsx';
 import { hasPermission } from '@/lib/permissions';
+import { formatDate } from '@/lib/utils';
 
 // Force dynamic rendering — this route reads live DB/session data on every request and
 // must never be statically cached/prerendered (prevents both stale data and the
@@ -45,7 +46,7 @@ export async function GET(request) {
       const headers = ['Order #', 'Date', 'Customer', 'Email', 'Phone', 'Type', 'Items', 'Subtotal', 'Delivery', 'Discount', 'Total', 'Payment', 'Pay Status', 'Order Status', 'City', 'District'];
       const rows = orders.map(o => [
         o.orderNumber,
-        new Date(o.createdAt).toLocaleDateString('en-GB'),
+        formatDate(o.createdAt),
         o.user?.name || '',
         o.user?.email || '',
         o.user?.phone || '',
@@ -70,7 +71,7 @@ export async function GET(request) {
       ['Order #', 'Date', 'Customer Name', 'Email', 'Phone', 'Buyer Type', 'Items Count', 'Subtotal (BDT)', 'Delivery (BDT)', 'Discount (BDT)', 'Total (BDT)', 'Payment Method', 'Payment Status', 'Order Status', 'City', 'District', 'Coupon'],
       ...orders.map(o => [
         o.orderNumber,
-        new Date(o.createdAt).toLocaleDateString('en-GB'),
+        formatDate(o.createdAt),
         o.user?.name || '',
         o.user?.email || '',
         o.user?.phone || '',
@@ -110,7 +111,7 @@ export async function GET(request) {
       ['Total Discounts', orders.reduce((s, o) => s + (o.discount || 0) + (o.couponDiscount || 0), 0)],
       ['Local Orders', orders.filter(o => o.orderType === 'local').length],
       ['International Orders', orders.filter(o => o.orderType === 'international').length],
-      ['Export Date', new Date().toLocaleDateString('en-GB')],
+      ['Export Date', formatDate(new Date())],
     ];
     const ws2 = XLSX.utils.aoa_to_sheet(ws2_data);
     ws2['!cols'] = [{ wch: 28 }, { wch: 20 }];

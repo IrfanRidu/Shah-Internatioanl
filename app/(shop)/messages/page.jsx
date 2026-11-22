@@ -11,6 +11,7 @@ import Input from '@/components/ui/Input';
 import { MessageSquare, Plus, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+import { formatDate } from '@/lib/utils';
 
 export default function MessagesPage() {
   const { data: session } = useSession();
@@ -74,7 +75,7 @@ export default function MessagesPage() {
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-xs text-gray-400">{format(new Date(c.lastMessageAt), 'dd MMM, hh:mm a')}</p>
+                  <p className="text-xs text-gray-400">{formatDate(c.lastMessageAt)}, {format(new Date(c.lastMessageAt), 'hh:mm a')}</p>
                   <ChevronRight className="w-4 h-4 text-gray-300 ml-auto mt-2" />
                 </div>
               </div>

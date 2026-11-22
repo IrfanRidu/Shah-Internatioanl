@@ -175,19 +175,21 @@ function ItemsTable({ items, onChange, currency = 'EUR', ctnConfigs = [] }) {
     // (the "Category Wise Product Details" section and BD Invoice's per-category rows) can be
     // computed instantly from `items` with no extra fetch. /api/products already populates
     // `category` with { _id, name, slug }, so `product.category?.name` is available right here.
-    const fields = { productName: product.name, botanicalName: product.scientificName || '', productId: product._id, category: product.category?.name || '' };
+    // Bangla Name: same auto-fill-then-independently-editable pattern as botanicalName — snapshot
+    // the catalog product's own localName at selection time (never clobbered later by a catalog edit).
+    const fields = { productName: product.name, botanicalName: product.scientificName || '', localName: product.localName || '', productId: product._id, category: product.category?.name || '' };
     if (product.hsCode) fields.hsCode = product.hsCode;
     updateFields(i, fields);
   };
 
   const addRow = () => {
     const slNo = items.length + 1;
-    onChange([...items, { slNo, productName: '', botanicalName: '', productId: '', category: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
+    onChange([...items, { slNo, productName: '', botanicalName: '', localName: '', productId: '', category: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
   };
   const removeRow = (i) => onChange(items.filter((_, idx) => idx !== i));
   const addFromProduct = (product) => {
     const slNo = items.length + 1;
-    onChange([...items, { slNo, productName: product.name, botanicalName: product.scientificName || '', productId: product._id, category: product.category?.name || '', hsCode: product.hsCode || '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
+    onChange([...items, { slNo, productName: product.name, botanicalName: product.scientificName || '', localName: product.localName || '', productId: product._id, category: product.category?.name || '', hsCode: product.hsCode || '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }]);
   };
 
   const grandCTN = items.reduce((a, r) => a + (Number(r.totalCTN) || 0), 0);
@@ -208,12 +210,13 @@ function ItemsTable({ items, onChange, currency = 'EUR', ctnConfigs = [] }) {
             to barely-legible widths. Fixed layout makes these widths authoritative instead of just
             hints; overflow-x-auto on the wrapper above still lets the whole table scroll
             horizontally on narrower screens rather than forcing everything to be squeezed to fit. */}
-        <table className="w-full text-xs table-fixed" style={{ minWidth: '1120px' }}>
+        <table className="w-full text-xs table-fixed" style={{ minWidth: '1220px' }}>
           <thead>
             <tr className="bg-gray-900 text-white">
               <th className="px-3 py-2.5 text-center w-9">SL</th>
               <th className="px-3 py-2.5 text-left w-40">Product Name</th>
               <th className="px-3 py-2.5 text-left w-36">Botanical Name</th>
+              <th className="px-3 py-2.5 text-left w-28">Bangla Name</th>
               <th className="px-3 py-2.5 text-left w-24">H.S. Code</th>
               <th className="px-3 py-2.5 text-right w-24 whitespace-nowrap">Pack Size (kg)</th>
               <th className="px-3 py-2.5 text-right w-16 whitespace-nowrap">CTN</th>
@@ -245,6 +248,9 @@ function ItemsTable({ items, onChange, currency = 'EUR', ctnConfigs = [] }) {
                 </td>
                 <td className="px-2 py-2">
                   <input value={item.botanicalName || ''} onChange={e => update(i, 'botanicalName', e.target.value)} className="input-field py-1.5 text-xs w-full" placeholder="Botanical name" />
+                </td>
+                <td className="px-2 py-2">
+                  <input value={item.localName || ''} onChange={e => update(i, 'localName', e.target.value)} className="input-field py-1.5 text-xs w-full" placeholder="বাংলা নাম" />
                 </td>
                 <td className="px-2 py-2">
                   <input value={item.hsCode || ''} onChange={e => update(i, 'hsCode', e.target.value)} className="input-field py-1.5 text-xs w-full" placeholder="H.S. Code" />
@@ -348,11 +354,12 @@ function ReadOnlyItemsView({ items, columns, currency = 'EUR', salesTerm }) {
   if (!visible.length) return <p className="text-sm text-gray-400 italic py-6 text-center">No products yet — add them in the Shipment Details tab</p>;
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-100 dark:border-gray-700">
-      <table className="w-full text-xs table-fixed" style={{ minWidth: '640px' }}>
+      <table className="w-full text-xs table-fixed" style={{ minWidth: '720px' }}>
         <thead>
           <tr className="bg-gray-900 text-white">
             <th className="px-3 py-2.5 text-center w-12">SL NO.</th>
-            <th className="px-3 py-2.5 text-left w-56">Name of Products (Botanical Name)</th>
+            <th className="px-3 py-2.5 text-left w-48">Name of Products (Botanical Name)</th>
+            <th className="px-3 py-2.5 text-left w-28">Bangla Name</th>
             {columns.map(k => <th key={k} className={`px-3 py-2.5 text-right whitespace-nowrap ${DOC_COLUMN_WIDTH[k] || 'w-28'}`}>{columnHeaderLabel(k, currency, salesTerm)}</th>)}
           </tr>
         </thead>
@@ -361,13 +368,14 @@ function ReadOnlyItemsView({ items, columns, currency = 'EUR', salesTerm }) {
             <tr key={i} className="border-b border-gray-100 dark:border-gray-800">
               <td className="px-3 py-2.5 text-center text-gray-500 font-medium">{i + 1}</td>
               <td className="px-3 py-2.5">{r.productName}{r.botanicalName && <span className="italic text-gray-400"> ({r.botanicalName})</span>}</td>
+              <td className="px-3 py-2.5">{r.localName || '—'}</td>
               {columns.map(k => <td key={k} className="px-3 py-2.5 text-right">{renderCell(k, r)}</td>)}
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="bg-gray-900 text-white text-xs font-bold">
-            <td colSpan={2} className="px-3 py-2.5 text-right">Grand Total:</td>
+            <td colSpan={3} className="px-3 py-2.5 text-right">Grand Total:</td>
             {columns.map(k => <td key={k} className="px-3 py-2.5 text-right">{renderGrand(k)}</td>)}
           </tr>
         </tfoot>
@@ -469,7 +477,7 @@ function BdInvoiceTable({ items, onChange, columns, currency = 'EUR', salesTerm 
 }
 
 // ─── Main page ──────────────────────────────────────────────────────────────
-const EMPTY = () => Array.from({ length: 3 }, (_, i) => ({ slNo: i + 1, productName: '', botanicalName: '', productId: '', category: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }));
+const EMPTY = () => Array.from({ length: 3 }, (_, i) => ({ slNo: i + 1, productName: '', botanicalName: '', localName: '', productId: '', category: '', hsCode: '', ctnSizeKg: '', totalCTN: '', totalCtnWeightKg: '', quantityKg: '', unitPrice: '', totalValue: '' }));
 
 export default function ShipmentDetailPage() {
   const { countryId, buyerId, shipmentId } = useParams();
@@ -1038,7 +1046,15 @@ export default function ShipmentDetailPage() {
   if (bdHasData && !isBdProductMode) {
     if (Math.abs(bdTotalCTN - liveTotalCTN) > MISMATCH_TOLERANCE) bdMismatches.push(`Total CTN — BD Invoice: ${bdTotalCTN}, Shipment Details: ${liveTotalCTN}`);
     if (Math.abs(bdTotalQty - liveTotalNetWeightKg) > MISMATCH_TOLERANCE) bdMismatches.push(`Net Weight — BD Invoice: ${bdTotalQty.toFixed(2)} KG, Shipment Details: ${liveTotalNetWeightKg.toFixed(2)} KG`);
-    if (Math.abs(bdTotalValue - itemsTotalValue) > MISMATCH_TOLERANCE) bdMismatches.push(`Total Value — BD Invoice: ${bdTotalValue.toFixed(2)} ${form.baseCurrency}, Shipment Details: ${itemsTotalValue.toFixed(2)} ${form.baseCurrency}`);
+    // Deliberately NO "Total Value" check here any more. BD Invoice is allowed to carry its own BD
+    // Price, independent of Buyer's Invoice's Buyer's Price (the shipment's BD-market declared value
+    // vs. the price actually charged to the foreign buyer are routinely different numbers in real
+    // export documentation) — so a Total Value difference between BD Invoice and Shipment Details/
+    // Buyer's Invoice is expected, not an error, and must never be flagged red. What DOES still have
+    // to match is physical quantity (Total CTN / Net Weight above) — the same goods, same packing,
+    // regardless of which price is printed on which document. The two totals are shown side by side,
+    // unflagged, in the "Price Summary" block on the Shipment Details tab (see liveShipmentAveragePrice
+    // / bdTotalValue / itemsTotalValue below) so the admin can still see both at a glance.
   }
 
   if (loading) return <div className="py-20"><Loader /></div>;
@@ -1312,7 +1328,7 @@ export default function ShipmentDetailPage() {
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Net Weight</p><p className="font-bold text-gray-900 dark:text-white">{liveTotalNetWeightKg.toFixed(2)} kg</p></div>
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Total CTN</p><p className="font-bold text-gray-900 dark:text-white">{liveTotalCTN}</p></div>
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Gross Weight</p><p className="font-bold text-gray-900 dark:text-white">{Number(displayGrossWeightKg || 0).toFixed(2)} kg</p></div>
-              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Freight Cost</p><p className="font-bold text-gray-900 dark:text-white">{form.freightCost || 0} {form.baseCurrency}</p></div>
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Freight Cost</p><p className="font-bold text-gray-900 dark:text-white">{Number(form.freightCost || 0).toFixed(2)} {form.baseCurrency}</p></div>
             </div>
             <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 text-sm">
               <span className="text-blue-700 dark:text-blue-300 font-semibold">Currency: {form.baseCurrency}</span>
@@ -1373,7 +1389,7 @@ export default function ShipmentDetailPage() {
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Net Weight</p><p className="font-bold text-gray-900 dark:text-white">{liveTotalNetWeightKg.toFixed(2)} kg</p></div>
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Total CTN</p><p className="font-bold text-gray-900 dark:text-white">{liveTotalCTN}</p></div>
               <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Gross Weight</p><p className="font-bold text-gray-900 dark:text-white">{Number(displayGrossWeightKg || 0).toFixed(2)} kg</p></div>
-              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Freight Cost</p><p className="font-bold text-gray-900 dark:text-white">{form.freightCost || 0} {form.baseCurrency}</p></div>
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50"><p className="text-xs text-gray-500">Freight Cost</p><p className="font-bold text-gray-900 dark:text-white">{Number(form.freightCost || 0).toFixed(2)} {form.baseCurrency}</p></div>
             </div>
 
             {/* R3/R4: "IF any of these value doesn't match... mark the value in red and show error
@@ -1575,6 +1591,33 @@ export default function ShipmentDetailPage() {
                   </table>
                 </div>
               )}
+            </div>
+
+            {/* Price Summary — BD Price (what BD Invoice prints) and Buyer's Price (what Buyer's
+                Invoice prints) are intentionally two separate numbers: Buyer's Invoice always mirrors
+                the Products table above (itemsTotalValue); BD Invoice uses its own price — either its
+                independently-editable category rows (Category HS Code mode) or, in Product HS Code
+                mode, the same Products table (bdTotalValue already resolves this per-mode, see its
+                definition above). These two rows are shown side by side, unflagged, specifically so
+                the admin can see both without hunting across tabs — they are NOT expected to match
+                (see the BD Invoice tab's mismatch check, which no longer compares Total Value). This
+                block is also the single place both numbers are guaranteed consistent with what each
+                document actually prints: "Total BD Price" here is exactly bdTotalValue, the same
+                number BD Invoice's own "Total BD Invoice Value" shows; "Total Buyer's Price" here is
+                exactly itemsTotalValue, the same number Buyer's Invoice's "Total Invoice Value" shows. */}
+            <div className="rounded-2xl border border-gray-100 dark:border-gray-800 p-4">
+              <h3 className="font-bold text-gray-900 dark:text-white">Price Summary</h3>
+              <p className="text-xs text-gray-400 mt-0.5 mb-3">BD Price and Buyer's Price are independent — they're allowed to differ. Each is guaranteed to match its own document's printed total.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+                  <p className="text-xs text-gray-500">Total BD Price <span className="text-gray-400">— as printed on BD Invoice</span></p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">{bdTotalValue.toFixed(2)} {form.baseCurrency}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+                  <p className="text-xs text-gray-500">Total Buyer's Price <span className="text-gray-400">— as printed on Buyer's Invoice</span></p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white">{itemsTotalValue.toFixed(2)} {form.baseCurrency}</p>
+                </div>
+              </div>
             </div>
 
             <h3 className="font-bold text-gray-900 dark:text-white">Financial Details & Profit Analysis</h3>
